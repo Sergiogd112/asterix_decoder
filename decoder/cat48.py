@@ -2,7 +2,7 @@ import numpy as np
 
 import pandas as pd
 import bitstring
-
+from rich import print
 
 def decode_dsi(data):
     """Decode Data Source Identifier (DSI) from a binary data string.
@@ -32,7 +32,7 @@ def decode_dsi(data):
 def decode_time_of_day(data):
     """Decodes the Time of Day from the given data.
 
-    Time of Day in Cat 48 represents the absolute time, expressed as UTC, 
+    Time of Day in Cat 48 represents the absolute time, expressed as UTC,
     that has elapsed since last midnight, measured in 128ths (2^-7) of a second.
 
     Parameters:
@@ -55,12 +55,12 @@ def decode_time_of_day(data):
 def decode_target_desc(data):
     """Decode Target Description data for CAT048.
 
-    This function decodes target description data according to EUROCONTROL ASTERIX CAT048 
-    specification. It processes up to three levels of field extensions providing detailed 
+    This function decodes target description data according to EUROCONTROL ASTERIX CAT048
+    specification. It processes up to three levels of field extensions providing detailed
     target information.
 
     Args:
-        data (BitArray): Bit array containing the target description data. Must be at least 
+        data (BitArray): Bit array containing the target description data. Must be at least
             8 bits long, and longer if field extensions are present.
 
     Returns:
@@ -86,7 +86,7 @@ def decode_target_desc(data):
             - int: Number of bits processed
 
     Raises:
-        ValueError: If the input data length is insufficient for the required fields and 
+        ValueError: If the input data length is insufficient for the required fields and
             their extensions.
     """
     if len(data) < 8:
@@ -160,10 +160,234 @@ def decode_target_desc(data):
     return target_desc, step
 
 
+def decode_measure_position_slant_polar(data):
+    """Decode Measured Position in Slant Polar Coordinates from binary data.
+    This function decodes the Measured Position in Slant Polar Coordinates data item
+    from ASTERIX Category 48. It extracts the Range and Theta values from the provided
+    binary data.
+    Args:
+        data (BitArray): Binary string containing the Measured Position in Slant Polar Coordinates data.
+                          Must be at least 32 bits long.
+    Returns:
+        tuple: A tuple containing:
+            - dict: A dictionary with the following keys:
+                * 'Range NM': Range in nautical miles (float)
+                * 'Theta': Angle in degrees (float)
+            - int: Number of bits processed (32)
+    Raises:
+        ValueError: If input data length is less than 32 bits
+    """
+    if len(data) < 32:
+        raise ValueError(
+            "Data length must be at least 32 bits for Measured Position in Slant Polar Coordinates"
+        )
+    return {
+        "Range NM": data[0:16].uint / 256.0,
+        "Theta": data[16:24].uint * (360.0 / 2**16),
+    }, 32
+
+
+def decode_mode3a_octal(data):
+    """Decode Mode 3/A Octal from binary data.
+    This function decodes the Mode 3/A Octal data item from ASTERIX Category 48.
+    It extracts the Validated, Garbled, Derived from reply flags and the A, B, C, D
+    octal digits from the provided binary data.
+    Args:
+        data (BitArray): Binary string containing the Mode 3/A Octal data.
+                          Must be at least 16 bits long.
+    Returns:
+        tuple: A tuple containing:
+            - dict: A dictionary with the following keys:
+                * 'Validated' (bool): Validated flag
+                * 'Garbled' (bool): Garbled flag
+                * 'Derived from reply' (bool): Derived from reply flag
+                * 'A' (int): First octal digit
+                * 'B' (int): Second octal digit
+                * 'C' (int): Third octal digit
+                * 'D' (int): Fourth octal digit
+            - int: Number of bits processed (16)
+    Raises:
+        ValueError: If input data length is less than 16 bits
+    """
+    if len(data) < 16:
+        raise ValueError("Data length must be at least 16 bits for Mode 3/A Octal")
+    return {
+        "Validated": data[0],
+        "Garbled": data[1],
+        "Derived from reply": data[2],
+        "A": (data[3:7].uint),
+        "B": (data[7:11].uint),
+        "C": (data[11:16].uint),
+        "D": (data[16:21].uint),
+    }, 16
+
+
+def decode_fl_binary(data):
+    """Decode Flight Level (Binary) from binary data.
+    This function decodes the Flight Level (Binary) data item from ASTERIX Category 48.
+    It extracts the Validated, Garbled flags and the Flight Level value from the provided
+    binary data.
+    Args:
+        data (BitArray): Binary string containing the Flight Level (Binary) data.
+                          Must be at least 16 bits long.
+    Return:
+        tuple: A tuple containing
+            - dict: A dictionary with the following keys:
+                * 'Validated' (bool): Validated Flag,
+                * 'Garbled' (bool): Garbled Flag
+                * 'FL' (float): Flight Level in hundreds of feet
+            - int: Number of bits processed
+    Raises:
+        ValueError: If input data length is less than 16 bits
+    """
+
+    if len(data) < 16:
+        raise ValueError(
+            "Data length must be at least 16 bits for Flight Level (Binary)"
+        )
+    return {
+        "Validated": data[0],
+        "Garbled": data[1],
+        "FL": data[2:16].uint / 4.0,
+    }, 16
+
+
+def decode_radar_plot_characteristics(data):
+    """Decode Radar Plot Characteristics from binary data.
+    This function decodes the Radar Plot Characteristics data item from ASTERIX Category 48.
+    It extracts various radar plot characteristics based on the presence flags in the
+    provided binary data.
+    Args:
+        data (BitArray): Binary string containing the Radar Plot Characteristics data.
+                          Must be at least 8 bits long, and longer if presence flags are set.
+    Returns:
+        tuple: A tuple containing:
+            - dict or None: A dictionary with the following possible keys if present:
+                * 'SSR plot runlength' (float): SSR plot runlength in degrees
+                * 'Number of received replies SSR' (int): Number of received SSR replies
+                * 'Amplitude of (M)SSR reply' (int): Amplitude of (M)SSR reply
+                * 'Primary Plot Runlength' (float): Primary plot runlength in degrees
+                * 'Amplitude of Primary Plot' (int): Amplitude of primary plot
+                * 'Range (PSR-SSR)' (float): Range difference between PSR and SSR in nautical miles
+                * 'Azimuth (PSR-SSR)' (float): Azimuth difference between PSR and SSR in degrees
+            - int: Number of bits processed
+    Raises:
+        ValueError: If input data length is less than 8 bits
+    """
+    if len(data) < 8:
+        raise ValueError(
+            "Data length must be at least 8 bits for Radar Plot Characteristics"
+        )
+    # if not data[7]:
+    #     return None, 8
+    radar_plot_characteristics = {}
+    current = 8
+    if data[0]:
+        radar_plot_characteristics["SSR plot runlength"] = (
+            data[current : current + 8].uint * 360.0 / 2**13
+        )
+        current += 8
+    if data[1]:
+        radar_plot_characteristics["Number of received replies SSR"] = data[
+            current : current + 8
+        ].uint
+        current += 8
+    if data[2]:
+        radar_plot_characteristics["Amplitude of (M)SSR reply"] = data[
+            current : current + 8
+        ].uint
+        current += 8
+    if data[3]:
+        radar_plot_characteristics["Primary Plot Runlength"] = (
+            data[current : current + 8].uint * 360.0 / 2**13
+        )
+        current += 8
+    if data[4]:
+        radar_plot_characteristics["Amplitude of Primary Plot"] = data[
+            current : current + 8
+        ].uint
+        current += 8
+    if data[5]:
+        radar_plot_characteristics["Range (PSR-SSR)"] = (
+            data[current : current + 8].uint / 256.0
+        )
+        current += 8
+    if data[6]:
+        radar_plot_characteristics["Azimuth (PSR-SSR)"] = (
+            data[current : current + 8].uint * 360.0 / 2**14
+        )
+        current += 8
+    return radar_plot_characteristics, current
+
+def decode_aircraft_address(data):
+    """Decode Aircraft Address from binary data.
+    This function decodes the Aircraft Address data item from ASTERIX Category 48.
+    It extracts the 24-bit aircraft address from the provided binary data.
+    Args:
+        data (BitArray): Binary string containing the Aircraft Address data.
+                          Must be at least 24 bits long.
+    Returns:
+        tuple: A tuple containing:
+            - str: Aircraft address as a hexadecimal string
+            - int: Number of bits processed (24)
+    Raises:
+        ValueError: If input data length is less than 24 bits
+    """
+    if len(data) < 24:
+        raise ValueError("Data length must be at least 24 bits for Aircraft Address")
+    address = f"{data[0:24].uint:06X}"
+    return address, 24
+
+def decode_aircraft_id(data):
+    """Decode Aircraft ID from binary data.
+    This function decodes the Aircraft ID data item from ASTERIX Category 48.
+    It extracts the 8-character aircraft identification from the provided binary data.
+    Args:
+        data (BitArray): Binary string containing the Aircraft ID data.
+                          Must be at least 48 bits long.
+    Returns:
+        tuple: A tuple containing:
+            - str: Aircraft ID as an 8-character string
+            - int: Number of bits processed (48)
+    Raises:
+        ValueError: If input data length is less than 48 bits
+    """
+    if len(data) < 48:
+        raise ValueError("Data length must be at least 48 bits for Aircraft ID")
+    chars = []
+    for i in range(8):
+        char_code = data[i * 6 : (i + 1) * 6].uint
+        if char_code == 0:
+            chars.append(" ")
+        elif 1 <= char_code <= 26:
+            chars.append(chr(char_code + 64))  # A-Z
+        elif 48 <= char_code <= 57:
+            chars.append(chr(char_code))  # 0-9
+        else:
+            chars.append(" ")  # Invalid character code
+    aircraft_id = "".join(chars).rstrip()
+    return aircraft_id, 48
+
+def decode_mode_s_mb_data(data):
+    if len(data) < 72:
+        raise ValueError("Data length must be at least 72 bits for Mode S MB Data")
+    repetition = data[0:8].uint
+    return {"Repetition": repetition}, 72
+
 mapper = [
     ("DSI", decode_dsi),
     ("Time of Day", decode_time_of_day),
     ("Target Description", decode_target_desc),
+    (
+        "Measured Position in Slant Polar Coordinates",
+        decode_measure_position_slant_polar,
+    ),
+    ("Mode 3/A Octal", decode_mode3a_octal),
+    ("Flight Level (Binary)", decode_fl_binary),
+    ("Radar Plot Characteristics", decode_radar_plot_characteristics),
+    ("Aircraft Address", decode_aircraft_address),
+    ("Aircraft ID", decode_aircraft_id),
+    ("Mode S MB Data", decode_mode_s_mb_data),
 ]
 
 
@@ -200,9 +424,10 @@ def decode_cat48(cat, len, data: bitstring.BitArray):
         fspec_block_3 = None
         fspec_block_4 = None
     decoded = {}
-    for item in data_items_to_decode[:3]:
+    for item in data_items_to_decode[:9]:
         result, step = mapper[item][1](data[start:])
         decoded[mapper[item][0]] = result
         start += step
-    print(f"Decoded CAT48 Data Items: {decoded}")
+    print("Decoded CAT48 Data Items:")
+    print(decoded)
     return data_items_to_decode
