@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import bitstring
 from tqdm import tqdm
-from .cat48 import DecodeCat48
+from .cat48 import decode_cat48
 
 
 class Decoder:
@@ -18,7 +18,7 @@ class Decoder:
             while current_pos + 24 <= total_bits:  # Need at least 24 bits for header
                 cat = bit_data[current_pos : current_pos + 8].uint
                 length = bit_data[current_pos + 8 : current_pos + 24].uint
-                data_end = current_pos + (length) * 8 
+                data_end = current_pos + (length) * 8
 
                 if data_end > total_bits:
                     break
@@ -37,10 +37,10 @@ class Decoder:
         self.bit_data = bitstring.BitArray(self.data)
         print(f"Loaded {len(self.data)} bytes from {file_name}")
         self.splited_data = self.split_data(self.bit_data)
-        distinct_data_items =set()
+        distinct_data_items = set()
         for element in tqdm(self.splited_data[:100]):
             cat, length, data = element
             if cat == 48:
-                data_items_to_decode=DecodeCat48(cat, length, data.bin)
+                data_items_to_decode = decode_cat48(cat, length, data.bin)
                 distinct_data_items.update(data_items_to_decode)
-        print(f'Distinct data items in the records: {sorted(distinct_data_items)}')
+        print(f"Distinct data items in the records: {sorted(distinct_data_items)}")
