@@ -15,7 +15,9 @@ def decode_dsi(data):
 
     Returns:
         tuple: A tuple containing:
-            - dsi (tuple): A tuple with (SAC, SIC) values
+            - dict: A dictionary with the following keys:
+                * 'SAC' (int): System Area Code
+                * 'SIC' (int): System Identification Code
             - int: Number of bits processed (16)
 
     Raises:
@@ -24,9 +26,11 @@ def decode_dsi(data):
     if len(data) < 8:
         raise ValueError("Data length must be at least 8 bits for DSI")
     sac = data[0:8]
-    sac = data[8:16]
-    dsi = (sac, sac)
-    return dsi, 16
+    sic = data[8:16]
+    return {
+        "SAC": sac.uint,
+        "SIC": sic.uint,
+    }, 16
 
 
 def decode_time_of_day(data):
