@@ -4,6 +4,7 @@ import pandas as pd
 import bitstring
 from rich import print
 
+
 def decode_dsi(data):
     """Decode Data Source Identifier (DSI) from a binary data string.
 
@@ -28,8 +29,8 @@ def decode_dsi(data):
     sac = data[0:8]
     sic = data[8:16]
     return {
-        "SAC": sac.uint,
-        "SIC": sic.uint,
+        "SAC": sac,
+        "SIC": sic,
     }, 16
 
 
@@ -187,7 +188,7 @@ def decode_measure_position_slant_polar(data):
         )
     return {
         "Range NM": data[0:16].uint / 256.0,
-        "Theta": data[16:24].uint * (360.0 / 2**16),
+        "Theta": data[16:32].uint * (360.0 / 2**16),
     }, 32
 
 
@@ -219,10 +220,10 @@ def decode_mode3a_octal(data):
         "Validated": data[0],
         "Garbled": data[1],
         "Derived from reply": data[2],
-        "A": (data[3:7].uint),
-        "B": (data[7:11].uint),
-        "C": (data[11:16].uint),
-        "D": (data[16:21].uint),
+        "A": (data[4:7].uint),
+        "B": (data[7:10].uint),
+        "C": (data[10:13].uint),
+        "D": (data[10:16].uint),
     }, 16
 
 
@@ -302,12 +303,12 @@ def decode_radar_plot_characteristics(data):
         ].uint
         current += 8
     if data[3]:
-        radar_plot_characteristics["Primary Plot Runlength"] = (
+        radar_plot_characteristics["Primary Plot Runlength (deg)"] = (
             data[current : current + 8].uint * 360.0 / 2**13
         )
         current += 8
     if data[4]:
-        radar_plot_characteristics["Amplitude of Primary Plot"] = data[
+        radar_plot_characteristics["Amplitude of Primary Plot (dBm)"] = data[
             current : current + 8
         ].uint
         current += 8
@@ -322,6 +323,7 @@ def decode_radar_plot_characteristics(data):
         )
         current += 8
     return radar_plot_characteristics, current
+
 
 def decode_aircraft_address(data):
     """Decode Aircraft Address from binary data.
@@ -341,6 +343,7 @@ def decode_aircraft_address(data):
         raise ValueError("Data length must be at least 24 bits for Aircraft Address")
     address = f"{data[0:24].uint:06X}"
     return address, 24
+
 
 def decode_aircraft_id(data):
     """Decode Aircraft ID from binary data.
@@ -372,11 +375,147 @@ def decode_aircraft_id(data):
     aircraft_id = "".join(chars).rstrip()
     return aircraft_id, 48
 
+
+def decode_BDS_4_0(data):
+    if len(data) < 56:
+        raise ValueError("Data length must be at least 56 bits for BDS 4,0")
+    bds_4_0 = {
+        "Status MCP/FCU": data[0],
+        "MCP/FCU Selected Altitude": data[1:13].uint / 16.0,
+        "Status FMS": data[13],
+        "FMS Selected Altitude": data[14:26].uint / 16.0,
+        "Status Barometric Reference": data[26],
+        "Barometric Pressure Setting": data[27:39].uint * 0.1 + 800.0,
+        "Status MCP/FCU Mode": data[47],
+        "VNAV Mode": data[48],
+        "ALT Hold Mode": data[49],
+        "Approach Mode": data[50],
+        "Status Target Source": data[53],
+        "Target Alt Source": ["Unknown", "Aircraft Altitude", "MCP/FCU", "FMS"][
+            data[54:56].uint
+        ],
+    }
+    return bds_4_0, 56
+
+def decode_BDS_5_0(data):
+    if len(data) < 56:
+        raise ValueError("Data length must be at least 56 bits for BDS 5,0")
+    bds_5_0={
+        "Status Roll Angle": data[0],
+        "Roll Angle": (data[1:11].int) *45/256,
+        "Status Track Angle": data[11],
+        "Track Angle": (data[12:23].int) *90/512,
+        "Status Ground Speed": data[23],
+        "Ground Speed": data[24:34].uint * 2.0,
+        "Status Track Angle Rate": data[34],
+        "Track Angle Rate": (data[35:45].int) * 8/256,
+        "Status TAS": data[45],
+        "TAS": data[46:56].uint * 2.0,
+    }
+    return bds_5_0, 56
+
+def decode_BDS_6_0(data):
+    if len(data) < 56:
+        raise ValueError("Data length must be at least 56 bits for BDS 6,0")
+    bds_6_0={
+        "Status Magnetic Heading": data[0],
+        "Magnetic Heading": data[1:12].int*90/512,
+        "Status IAS": data[12],
+        "IAS": data[13:23].uint*1.0,
+        "Status Mach": data[23],
+        "Mach": data[24:34].uint*2.048/512,
+        "Status Barometric Altitude Rate": data[34],
+        "Barometric Altitude Rate": (data[35:45].int)*32.0,
+        "Status Inertial Vertical Velocity": data[45],
+        "Inertial Vertical Velocity": (data[46:56].int)*32.0,
+    }
+    return bds_6_0, 56
+
+mapper_bds=[
+    None,
+    None,
+    None,
+    None,
+    [("4,0", decode_BDS_4_0)],
+    [("5,0", decode_BDS_5_0)],
+    [("6,0", decode_BDS_6_0)]
+]
+
+
 def decode_mode_s_mb_data(data):
     if len(data) < 72:
         raise ValueError("Data length must be at least 72 bits for Mode S MB Data")
     repetition = data[0:8].uint
-    return {"Repetition": repetition}, 72
+    if len(data) < 8+(56+8)*repetition:
+        raise ValueError(f"Data length must be at least {8+(56+8)*repetition} bits for {repetition} Mode S MB Data blocks")
+    bds={"Repetition": repetition}
+    start=8
+    for i in range(repetition):
+        bda1=data[start+56:start+56+4].uint
+        bda2=data[start+56+4:start+56+8].uint
+        if bda1<4:
+            continue
+        if bda1>=len(mapper_bds) or mapper_bds[bda1] is None:
+            print(f"No decoder implemented for BDS {bda1},{bda2}")
+            start+=56+8
+            continue
+        if bda2>=len(mapper_bds[bda1]) or mapper_bds[bda1][bda2] is None:
+            print(f"No decoder implemented for BDS {bda1},{bda2}")
+            start+=56+8
+            continue
+        bds_name, bds_decoder=mapper_bds[bda1][bda2]
+        bds[bds_name], step=bds_decoder(data[start+8:start+8+56])
+        start+=56+8
+
+    return bds, 8+(56+8)*repetition
+
+def decode_track_number(data):
+    if len(data) < 16:
+        raise ValueError("Data length must be at least 16 bits for Track Number")
+    return data[4:16].uint, 16
+
+def decode_calculated_pos_in_cart(data):
+    if len(data)<32:
+        raise ValueError("Data length must be at least 64 bits for Calculated Position in Cartesian Coordinates")
+    return None, 32
+
+def decode_calc_track_vel_polar(data):
+    if len(data)<32:
+        raise ValueError("Data length must be at least 64 bits for Calculated Track Velocity in Polar Representation")
+    return {
+        "Groundspeed (NM/s)": data[0:16].uint/2.0**14,
+        "Heading (deg)":data[16:32].uint*360.0/2.0**16,
+    },32
+
+def decode_track_status(data):
+    if len(data)<8:
+        raise ValueError("Data length must be at least 8 bits for Track Status")
+    track_status={
+        "ConfVTent":data[0],
+        "Type of Sensor":[
+            "Combined Track",
+            "PSR Track",
+            "SSR/Mode S Track",
+            "Invalid"
+        ][data[1:3].uint],
+        "DOU":data[3],
+        "Manoeuver detection Horizontal":data[4],
+        "Climbing/Descending": [
+            "Maintaining",
+            "Climbing",
+            "Descending",
+            "Unknown"
+        ][data[5:7].uint],
+    }
+    if not data[7]:
+        return track_status,8
+    track_status.update({
+        "End of Track": data[8],
+        "Ghost":data[9],
+        "SUP":data[10],
+        "TCC":data[11],
+    })
+    return track_status,16
 
 mapper = [
     ("DSI", decode_dsi),
@@ -392,6 +531,10 @@ mapper = [
     ("Aircraft Address", decode_aircraft_address),
     ("Aircraft ID", decode_aircraft_id),
     ("Mode S MB Data", decode_mode_s_mb_data),
+    ("Track Number", decode_track_number),
+    ("Calculated Position in Cartesian Coords", decode_calculated_pos_in_cart),
+    ("Calculated Track Velocity in Polar Representation", decode_calc_track_vel_polar),
+    ("Track Status",decode_track_status)
 ]
 
 
@@ -399,7 +542,6 @@ def decode_cat48(cat, len, data: bitstring.BitArray):
     if cat != 48:
         raise ValueError("Category must be 48 for DecodeCat48")
     start = 8
-    data = bitstring.BitArray(bin=data)
     fspec_block_1 = data[:7]
     fx1 = data[7]
     data_items_to_decode = [i for i, bit in enumerate(fspec_block_1) if bit is True]
@@ -428,7 +570,7 @@ def decode_cat48(cat, len, data: bitstring.BitArray):
         fspec_block_3 = None
         fspec_block_4 = None
     decoded = {}
-    for item in data_items_to_decode[:9]:
+    for item in data_items_to_decode:
         result, step = mapper[item][1](data[start:])
         decoded[mapper[item][0]] = result
         start += step

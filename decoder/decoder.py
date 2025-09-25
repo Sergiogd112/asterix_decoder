@@ -14,7 +14,7 @@ class Decoder:
         current_pos = 0
         total_bits = len(bit_data)
 
-        with tqdm(total=total_bits // 8, desc="Decoding") as pbar:
+        with tqdm(total=total_bits // 8, desc="Decoding",unit="B") as pbar:
             while current_pos + 24 <= total_bits:  # Need at least 24 bits for header
                 cat = bit_data[current_pos : current_pos + 8].uint
                 length = bit_data[current_pos + 8 : current_pos + 24].uint
@@ -41,6 +41,6 @@ class Decoder:
         for element in tqdm(self.splited_data[:100]):
             cat, length, data = element
             if cat == 48:
-                data_items_to_decode = decode_cat48(cat, length, data.bin)
+                data_items_to_decode = decode_cat48(cat, length, data)
                 distinct_data_items.update(data_items_to_decode)
         print(f"Distinct data items in the records: {sorted(distinct_data_items)}")
