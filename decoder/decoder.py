@@ -14,7 +14,7 @@ class Decoder:
         current_pos = 0
         total_bits = len(bit_data)
 
-        with tqdm(total=total_bits // 8, desc="Decoding",unit="B") as pbar:
+        with tqdm(total=total_bits // 8, desc="Decoding", unit="B") as pbar:
             while current_pos + 24 <= total_bits:  # Need at least 24 bits for header
                 cat = bit_data[current_pos : current_pos + 8].uint
                 length = bit_data[current_pos + 8 : current_pos + 24].uint

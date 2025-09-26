@@ -484,7 +484,7 @@ def decode_track_number(data):
 def decode_calculated_pos_in_cart(data):
     if len(data) < 32:
         raise ValueError(
-            "Data length must be at least 64 bits for Calculated Position in Cartesian Coordinates"
+            "Data length must be at least 32 bits for Calculated Position in Cartesian Coordinates"
         )
     return None, 32
 
@@ -492,7 +492,7 @@ def decode_calculated_pos_in_cart(data):
 def decode_calc_track_vel_polar(data):
     if len(data) < 32:
         raise ValueError(
-            "Data length must be at least 64 bits for Calculated Track Velocity in Polar Representation"
+            "Data length must be at least 32 bits for Calculated Track Velocity in Polar Representation"
         )
     return {
         "Groundspeed (NM/s)": data[0:16].uint / 2.0**14,
@@ -533,13 +533,36 @@ def decode_track_status(data):
 def decode_track_quality(data):
     if len(data) < 32:
         raise ValueError(
-            "Data length must be at least 64 bits for Calculated Track Quality"
+            "Data length must be at least 32 bits for Calculated Track Quality"
         )
     return None, 32
 
 
 def decode_warning_error(data):
-    pass
+    if len(data) < 8:
+        raise ValueError("Data length must be at least 8 bits for Warning/Error")
+    codes = []
+    start = 0
+    while data[start + 7]:
+        codes.append(data[start : start + 7].uint)
+        start += 8
+    return codes, start
+
+
+def decode_mode_3a_code_conf(data):
+    if len(data) < 16:
+        raise ValueError(
+            "Data length must be at least 16 bits for Mode 3/A Code Confidence Indicator"
+        )
+    return None, 16
+
+
+def decode_mode_c_code_conf(data):
+    if len(data) < 32:
+        raise ValueError(
+            "Data length must be at least 32 bits for Mode C Code and Confidence Indicator"
+        )
+    return None, 32
 
 
 mapper = [
@@ -560,7 +583,10 @@ mapper = [
     ("Calculated Position in Cartesian Coords", decode_calculated_pos_in_cart),
     ("Calculated Track Velocity in Polar Representation", decode_calc_track_vel_polar),
     ("Track Status", decode_track_status),
-    ("Track Quality"),
+    ("Track Quality", decode_track_quality),
+    ("Warning/Error", decode_warning_error),
+    ("Mode-3/A Code Confidence Indicator", decode_mode_3a_code_conf),
+    ("Mode-C Code and Confidence Indicator", decode_mode_c_code_conf),
 ]
 
 
