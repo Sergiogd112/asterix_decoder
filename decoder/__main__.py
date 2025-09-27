@@ -1,4 +1,5 @@
 import argparse
+from time import time
 from .decoder import Decoder
 
 
@@ -15,6 +16,7 @@ if __name__ == "__main__":
     print(f"Test Radar: {args.test_radar}")
     print(f"Test ADS-B: {args.test_adsb}")
     print(f"Test All: {args.test_all}")
+    start=time()
     if args.test_radar:
         decoder = Decoder()
         decoder.load("Test_Data/datos_asterix_radar.ast")
@@ -24,3 +26,4 @@ if __name__ == "__main__":
     if args.test_all:
         decoder = Decoder()
         decoder.load("Test_Data/datos_asterix_combinado.ast")
+    print(f"Elapsed Time: {time()-start} s")
