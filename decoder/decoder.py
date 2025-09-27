@@ -3,6 +3,7 @@ import pandas as pd
 import bitstring
 from tqdm import tqdm
 from rich import print
+from multiprocessing import Pool, cpu_count
 from .cat48 import decode_cat48
 
 
@@ -32,16 +33,39 @@ class Decoder:
 
         return result
 
-    def load(self, file_name):
+    @staticmethod
+    def decode_element(element):
+        cat, length, data = element
+        if cat == 48:
+            return decode_cat48(cat, length, data)
+        return None
+
+    def load(self, file_name, parallel=True):
         with open(file_name, "rb") as f:
             self.data = f.read()
         self.bit_data = bitstring.BitArray(self.data)
         print(f"Loaded {len(self.data)} bytes from {file_name}")
         self.splited_data = self.split_data(self.bit_data)
-        decoded_messages=[]
-        for element in tqdm(self.splited_data,desc="Decoding", unit="Msg"):
-            cat, length, data = element
-            if cat == 48:
-                decoded_message = decode_cat48(cat, length, data)
-                decoded_messages.append(decoded_message)
+        decoded_messages = []
+
+        if parallel:
+            with Pool(processes=min(cpu_count() - 1, 8)) as pool:
+                results = list(
+                    tqdm(
+                        pool.imap(Decoder.decode_element, self.splited_data),
+                        total=len(self.splited_data),
+                        desc="Decoding",
+                        unit="Msg",
+                    )
+                )
+        else:
+            results = list(
+                tqdm(
+                    map(Decoder.decode_element, self.splited_data),
+                    total=len(self.splited_data),
+                    desc="Decoding",
+                    unit="Msg",
+                )
+            )
+        decoded_messages.extend([msg for msg in results if msg is not None])
         # print(decoded_messages)

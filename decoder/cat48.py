@@ -235,6 +235,8 @@ def decode_aircraft_address(data, pos):
     address_int = data[pos : pos + 24].uint
     address = f"{address_int:06X}"
     return address, 24
+
+
 def decode_aircraft_id(data, pos):
     """Optimized version with unrolled loop for character decoding (unrolling small loop for speed)."""
     if len(data) - pos < 48:
@@ -242,7 +244,7 @@ def decode_aircraft_id(data, pos):
     chars = []
     for i in range(8):
         start_bit = pos + i * 6
-        char_code = data[start_bit:start_bit + 6].uint
+        char_code = data[start_bit : start_bit + 6].uint
         if char_code == 0:
             chars.append(" ")
         elif 1 <= char_code <= 26:
@@ -259,20 +261,22 @@ def decode_BDS_4_0(data, pos):
     if len(data) - pos < 56:
         raise ValueError("Data length must be at least 56 bits for BDS 4,0")
     status_mcp = data[pos]
-    mcp_alt = data[pos+1:pos+13].uint / 16.0
-    status_fms = data[pos+13]
-    fms_alt = data[pos+14:pos+26].uint / 16.0
-    status_bar = data[pos+26]
-    bar_press = data[pos+27:pos+39].uint * 0.1 + 800.0
+    mcp_alt = data[pos + 1 : pos + 13].uint / 16.0
+    status_fms = data[pos + 13]
+    fms_alt = data[pos + 14 : pos + 26].uint / 16.0
+    status_bar = data[pos + 26]
+    bar_press = data[pos + 27 : pos + 39].uint * 0.1 + 800.0
     # Bits 39-46 unused?
-    status_mcp_mode = data[pos+47]
-    vnav = data[pos+48]
-    alt_hold = data[pos+49]
-    approach = data[pos+50]
+    status_mcp_mode = data[pos + 47]
+    vnav = data[pos + 48]
+    alt_hold = data[pos + 49]
+    approach = data[pos + 50]
     # Bits 51-52 unused?
-    status_target = data[pos+53]
-    target_alt_idx = data[pos+54:pos+56].uint
-    target_alt_source = ["Unknown", "Aircraft Altitude", "MCP/FCU", "FMS"][target_alt_idx]
+    status_target = data[pos + 53]
+    target_alt_idx = data[pos + 54 : pos + 56].uint
+    target_alt_source = ["Unknown", "Aircraft Altitude", "MCP/FCU", "FMS"][
+        target_alt_idx
+    ]
     bds_4_0 = {
         "Status MCP/FCU": bool(status_mcp),
         "MCP/FCU Selected Altitude": mcp_alt,
@@ -294,15 +298,15 @@ def decode_BDS_5_0(data, pos):
     if len(data) - pos < 56:
         raise ValueError("Data length must be at least 56 bits for BDS 5,0")
     status_roll = data[pos]
-    roll_angle = data[pos+1:pos+11].int * (45 / 256)
-    status_track = data[pos+11]
-    track_angle = data[pos+12:pos+23].int * (90 / 512)
-    status_gs = data[pos+23]
-    gs = data[pos+24:pos+34].uint * 2.0
-    status_ta_rate = data[pos+34]
-    ta_rate = data[pos+35:pos+45].int * (8 / 256)
-    status_tas = data[pos+45]
-    tas = data[pos+46:pos+56].uint * 2.0
+    roll_angle = data[pos + 1 : pos + 11].int * (45 / 256)
+    status_track = data[pos + 11]
+    track_angle = data[pos + 12 : pos + 23].int * (90 / 512)
+    status_gs = data[pos + 23]
+    gs = data[pos + 24 : pos + 34].uint * 2.0
+    status_ta_rate = data[pos + 34]
+    ta_rate = data[pos + 35 : pos + 45].int * (8 / 256)
+    status_tas = data[pos + 45]
+    tas = data[pos + 46 : pos + 56].uint * 2.0
     bds_5_0 = {
         "Status Roll Angle": bool(status_roll),
         "Roll Angle": roll_angle,
@@ -322,15 +326,15 @@ def decode_BDS_6_0(data, pos):
     if len(data) - pos < 56:
         raise ValueError("Data length must be at least 56 bits for BDS 6,0")
     status_mag_h = data[pos]
-    mag_h = data[pos+1:pos+12].int * (90 / 512)
-    status_ias = data[pos+12]
-    ias = data[pos+13:pos+23].uint * 1.0
-    status_mach = data[pos+23]
-    mach = data[pos+24:pos+34].uint * (2.048 / 512)
-    status_bar_rate = data[pos+34]
-    bar_rate = data[pos+35:pos+45].int * 32.0
-    status_inert_vv = data[pos+45]
-    inert_vv = data[pos+46:pos+56].int * 32.0
+    mag_h = data[pos + 1 : pos + 12].int * (90 / 512)
+    status_ias = data[pos + 12]
+    ias = data[pos + 13 : pos + 23].uint * 1.0
+    status_mach = data[pos + 23]
+    mach = data[pos + 24 : pos + 34].uint * (2.048 / 512)
+    status_bar_rate = data[pos + 34]
+    bar_rate = data[pos + 35 : pos + 45].int * 32.0
+    status_inert_vv = data[pos + 45]
+    inert_vv = data[pos + 46 : pos + 56].int * 32.0
     bds_6_0 = {
         "Status Magnetic Heading": bool(status_mag_h),
         "Magnetic Heading": mag_h,
@@ -360,16 +364,20 @@ mapper_bds = [
 def decode_mode_s_mb_data(data, pos):
     if len(data) - pos < 72:
         raise ValueError("Data length must be at least 72 bits for Mode S MB Data")
-    repetition = data[pos:pos+8].uint
+    repetition = data[pos : pos + 8].uint
     required_bits = 8 + repetition * 64  # 56 data + 8 BDS code
     if len(data) - pos < required_bits:
-        raise ValueError(f"Data length must be at least {required_bits} bits for {repetition} Mode S MB Data blocks")
+        raise ValueError(
+            f"Data length must be at least {required_bits} bits for {repetition} Mode S MB Data blocks"
+        )
     bds = {"Repetition": repetition}
     start = pos + 8
     for i in range(repetition):
         block_start = start
-        bda1 = data[block_start + 56:block_start + 60].uint  # BDS1,2 bits 56-59
-        bda2 = data[block_start + 60:block_start + 64].uint  # BDS1,2 bits 60-63, but original +56:56+4 and +4:+8
+        bda1 = data[block_start + 56 : block_start + 60].uint  # BDS1,2 bits 56-59
+        bda2 = data[
+            block_start + 60 : block_start + 64
+        ].uint  # BDS1,2 bits 60-63, but original +56:56+4 and +4:+8
         if bda1 < 4:
             start += 64
             continue
@@ -383,11 +391,15 @@ def decode_mode_s_mb_data(data, pos):
             start += 64
             continue
         bds_name, bds_decoder = bds_entry[bda2]
-        decoded_bds, _ = bds_decoder(data, block_start + 8)  # Data starts after 8-bit header per block? Original: data[start + 8 : start + 8 + 56]
+        decoded_bds, _ = bds_decoder(
+            data, block_start + 8
+        )  # Data starts after 8-bit header per block? Original: data[start + 8 : start + 8 + 56]
         bds[bds_name] = decoded_bds
         start += 64  # 56 + 8
 
-    return bds, required_bits - (start - pos - required_bits)  # Actually, total = 8 + rep*64
+    return bds, required_bits - (
+        start - pos - required_bits
+    )  # Actually, total = 8 + rep*64
     # Wait, return total consumed: 8 + rep*64
     return bds, 8 + repetition * 64
 
@@ -395,22 +407,26 @@ def decode_mode_s_mb_data(data, pos):
 def decode_track_number(data, pos):
     if len(data) - pos < 16:
         raise ValueError("Data length must be at least 16 bits for Track Number")
-    track_num = data[pos+4:pos+16].uint  # Bits 0-3 unused?
+    track_num = data[pos + 4 : pos + 16].uint  # Bits 0-3 unused?
     return track_num, 16
 
 
 def decode_calculated_pos_in_cart(data, pos):
     if len(data) - pos < 32:
-        raise ValueError("Data length must be at least 32 bits for Calculated Position in Cartesian Coordinates")
+        raise ValueError(
+            "Data length must be at least 32 bits for Calculated Position in Cartesian Coordinates"
+        )
     # Placeholder: original returns None
     return None, 32
 
 
 def decode_calc_track_vel_polar(data, pos):
     if len(data) - pos < 32:
-        raise ValueError("Data length must be at least 32 bits for Calculated Track Velocity in Polar Representation")
-    groundspeed = data[pos:pos+16].uint / (2**14)
-    heading = data[pos+16:pos+32].uint * (360.0 / (2**16))
+        raise ValueError(
+            "Data length must be at least 32 bits for Calculated Track Velocity in Polar Representation"
+        )
+    groundspeed = data[pos : pos + 16].uint / (2**14)
+    heading = data[pos + 16 : pos + 32].uint * (360.0 / (2**16))
     return {
         "Groundspeed (NM/s)": groundspeed,
         "Heading (deg)": heading,
@@ -421,11 +437,11 @@ def decode_track_status(data, pos):
     if len(data) - pos < 8:
         raise ValueError("Data length must be at least 8 bits for Track Status")
     conf_vt = data[pos]
-    type_sensor_idx = data[pos+1:pos+3].uint
-    dou = data[pos+3]
-    man_h = data[pos+4]
-    climb_desc_idx = data[pos+5:pos+7].uint
-    ext = data[pos+7]
+    type_sensor_idx = data[pos + 1 : pos + 3].uint
+    dou = data[pos + 3]
+    man_h = data[pos + 4]
+    climb_desc_idx = data[pos + 5 : pos + 7].uint
+    ext = data[pos + 7]
     track_status = {
         "ConfVTent": bool(conf_vt),
         "Type of Sensor": [
@@ -436,18 +452,22 @@ def decode_track_status(data, pos):
         ][type_sensor_idx],
         "DOU": bool(dou),
         "Manoeuver detection Horizontal": bool(man_h),
-        "Climbing/Descending": ["Maintaining", "Climbing", "Descending", "Unknown"][climb_desc_idx],
+        "Climbing/Descending": ["Maintaining", "Climbing", "Descending", "Unknown"][
+            climb_desc_idx
+        ],
     }
     bits = 8
     if ext:
         if len(data) - pos < 16:
             raise ValueError("Insufficient bits for extended Track Status")
-        track_status.update({
-            "End of Track": bool(data[pos+8]),
-            "Ghost": bool(data[pos+9]),
-            "SUP": bool(data[pos+10]),
-            "TCC": bool(data[pos+11]),
-        })
+        track_status.update(
+            {
+                "End of Track": bool(data[pos + 8]),
+                "Ghost": bool(data[pos + 9]),
+                "SUP": bool(data[pos + 10]),
+                "TCC": bool(data[pos + 11]),
+            }
+        )
         bits = 16
 
     return track_status, bits
@@ -466,7 +486,7 @@ def decode_warning_error(data, pos):
     codes = []
     current_pos = pos
     while data[current_pos + 7]:  # FX bit
-        code = data[current_pos:current_pos + 7].uint
+        code = data[current_pos : current_pos + 7].uint
         codes.append(code)
         current_pos += 8
     bits_consumed = current_pos - pos
@@ -475,21 +495,27 @@ def decode_warning_error(data, pos):
 
 def decode_mode_3a_code_conf(data, pos):
     if len(data) - pos < 16:
-        raise ValueError("Data length must be at least 16 bits for Mode 3/A Code Confidence Indicator")
+        raise ValueError(
+            "Data length must be at least 16 bits for Mode 3/A Code Confidence Indicator"
+        )
     # Placeholder: original returns None
     return None, 16
 
 
 def decode_mode_c_code_conf(data, pos):
     if len(data) - pos < 32:
-        raise ValueError("Data length must be at least 32 bits for Mode C Code and Confidence Indicator")
+        raise ValueError(
+            "Data length must be at least 32 bits for Mode C Code and Confidence Indicator"
+        )
     # Placeholder: original returns None
     return None, 32
 
 
 def decode_height_3d_radar(data, pos):
     if len(data) - pos < 16:
-        raise ValueError("Data length must be at least 16 bits for Height Measured by 3D Radar")
+        raise ValueError(
+            "Data length must be at least 16 bits for Height Measured by 3D Radar"
+        )
     # Placeholder: original returns None
     return None, 16
 
@@ -498,25 +524,29 @@ def decode_radial_doppler_speed(data, pos):
     # Original is broken: return None, 8 * data[0] + 56 * data[1] + 8 — invalid
     # Assuming fixed length or placeholder; for now, consume 16 bits or as is.
     if len(data) - pos < 16:
-        raise ValueError("Data length must be at least 16 bits for Radial Doppler Speed")
+        raise ValueError(
+            "Data length must be at least 16 bits for Radial Doppler Speed"
+        )
     # Placeholder
     return None, 16
 
 
 def decode_com_acas_cap_fl_st(data, pos):
     if len(data) - pos < 16:
-        raise ValueError("Data length must be at least 16 bits for Communications / ACAS Capability and Flight Status")
-    comm_cap_idx = data[pos:pos+3].uint
-    flight_stat_idx = data[pos+3:pos+6].uint
-    si_ii = data[pos+6]
+        raise ValueError(
+            "Data length must be at least 16 bits for Communications / ACAS Capability and Flight Status"
+        )
+    comm_cap_idx = data[pos : pos + 3].uint
+    flight_stat_idx = data[pos + 3 : pos + 6].uint
+    si_ii = data[pos + 6]
     # Bit 7 unused?
-    mode_s_ssc = data[pos+8]
-    alt_rep = data[pos+9]
-    ac_id_cap = data[pos+10]
-    acas_stat = data[pos+11]
-    hybrid = data[pos+12]
-    ta_ra = data[pos+13]
-    mops_idx = data[pos+14:pos+16].uint
+    mode_s_ssc = data[pos + 8]
+    alt_rep = data[pos + 9]
+    ac_id_cap = data[pos + 10]
+    acas_stat = data[pos + 11]
+    hybrid = data[pos + 12]
+    ta_ra = data[pos + 13]
+    mops_idx = data[pos + 14 : pos + 16].uint
     result = {
         "Communications Capability": [
             "No com",
@@ -536,7 +566,7 @@ def decode_com_acas_cap_fl_st(data, pos):
             "Alert, SPI, airborne or ground",
             "No alert, SPI, airborne or ground",
             "Not assigned",
-            "Unknown"
+            "Unknown",
         ][flight_stat_idx],
         "SI/II": "II" if si_ii else "SI",
         "Mode S Specific Service Capability": bool(mode_s_ssc),
@@ -545,7 +575,12 @@ def decode_com_acas_cap_fl_st(data, pos):
         "ACAS Status": "Operational" if acas_stat else "Failed or Standby",
         "Hybrid Surveillance": bool(hybrid),
         "TA/RA": "TA and RA" if ta_ra else "TA",
-        "Applicable MOPS Doc": ["RTCA DO-185", "RTCA DO-185A", "RTCA DO-185B", "Reserved For Future Versions"][mops_idx],
+        "Applicable MOPS Doc": [
+            "RTCA DO-185",
+            "RTCA DO-185A",
+            "RTCA DO-185B",
+            "Reserved For Future Versions",
+        ][mops_idx],
     }
     return result, 16
 
@@ -554,7 +589,10 @@ mapper = [
     ("DSI", decode_dsi),
     ("Time of Day", decode_time_of_day),
     ("Target Description", decode_target_desc),
-    ("Measured Position in Slant Polar Coordinates", decode_measure_position_slant_polar),
+    (
+        "Measured Position in Slant Polar Coordinates",
+        decode_measure_position_slant_polar,
+    ),
     ("Mode 3/A Octal", decode_mode3a_octal),
     ("Flight Level (Binary)", decode_fl_binary),
     ("Radar Plot Characteristics", decode_radar_plot_characteristics),
@@ -594,20 +632,26 @@ def decode_cat48(cat, len_bytes, data: bitstring.BitArray):
         fspec_block_2 = [data[pos + i] for i in range(7)]
         fx2 = data[pos + 7]
         pos += 8
-        data_items_to_decode += [i + 7 for i, present in enumerate(fspec_block_2) if present]
+        data_items_to_decode += [
+            i + 7 for i, present in enumerate(fspec_block_2) if present
+        ]
 
         if fx2:
             # FSPEC Block 3: bits 16-22 items (+14), bit23 FX3
             fspec_block_3 = [data[pos + i] for i in range(7)]
             fx3 = data[pos + 7]
             pos += 8
-            data_items_to_decode += [i + 14 for i, present in enumerate(fspec_block_3) if present]
+            data_items_to_decode += [
+                i + 14 for i, present in enumerate(fspec_block_3) if present
+            ]
 
             if fx3:
                 # FSPEC Block 4: bits 24-30 items (+21), no FX4 in CAT48
                 fspec_block_4 = [data[pos + i] for i in range(7)]
                 pos += 8  # Consume the octet, even if no FX
-                data_items_to_decode += [i + 21 for i, present in enumerate(fspec_block_4) if present]
+                data_items_to_decode += [
+                    i + 21 for i, present in enumerate(fspec_block_4) if present
+                ]
 
     decoded = {}
     for item in data_items_to_decode:

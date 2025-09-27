@@ -8,6 +8,7 @@ def parse_args():
     parser.add_argument("--test-radar", action="store_true", help="Use test radar data")
     parser.add_argument("--test-adsb", action="store_true", help="Use test ADS-B data")
     parser.add_argument("--test-all", action="store_true", help="Use all test data")
+    parser.add_argument("--parallel", action="store_true", help="Use parallel decoding")
     return parser.parse_args()
 
 
@@ -16,14 +17,14 @@ if __name__ == "__main__":
     print(f"Test Radar: {args.test_radar}")
     print(f"Test ADS-B: {args.test_adsb}")
     print(f"Test All: {args.test_all}")
-    start=time()
+    start = time()
     if args.test_radar:
         decoder = Decoder()
-        decoder.load("Test_Data/datos_asterix_radar.ast")
+        decoder.load("Test_Data/datos_asterix_radar.ast", args.parallel)
     if args.test_adsb:
         decoder = Decoder()
-        decoder.load("Test_Data/datos_asterix_adsb.ast")
+        decoder.load("Test_Data/datos_asterix_adsb.ast", args.parallel)
     if args.test_all:
         decoder = Decoder()
-        decoder.load("Test_Data/datos_asterix_combinado.ast")
+        decoder.load("Test_Data/datos_asterix_combinado.ast", args.parallel)
     print(f"Elapsed Time: {time()-start} s")
