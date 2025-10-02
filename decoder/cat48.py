@@ -9,13 +9,16 @@ def decode_dsi(data, pos):
     """Optimized inline version for DSI (fixed length)."""
     sac = data[pos : pos + 8].uint
     sic = data[pos + 8 : pos + 16].uint
-    return {"SAC": sac, "SIC": sic}, 16
+    return {"SAC": sac.uint, "SIC": sic.unit}, 16
 
 
 def decode_time_of_day(data, pos):
     """Optimized inline version for Time of Day (fixed length)."""
     time_of_day = data[pos : pos + 24].uint / 128.0
-    return time_of_day, 24
+    h=time_of_day//3600
+    m=(time_of_day//60)%60
+    s=time_of_day%60
+    return f"{h}:{m}:{s}", 24
 
 
 def decode_target_desc(data, pos):
