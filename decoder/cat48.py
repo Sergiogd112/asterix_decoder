@@ -145,15 +145,7 @@ def decode_mode3a_octal(data, pos):
     b = data[pos + 7 : pos + 10].uint
     c = data[pos + 10 : pos + 13].uint
     d = data[pos + 13 : pos + 16].uint  # Fixed from original bug
-    return {
-        "Validated": bool(validated),
-        "Garbled": bool(garbled),
-        "Derived from reply": bool(derived),
-        "A": a,
-        "B": b,
-        "C": c,
-        "D": d,
-    }, 16
+    return ((a * 10 + b) * 10 + c) * 10 + d, 16
 
 
 def decode_fl_binary(data, pos):
@@ -428,10 +420,10 @@ def decode_calc_track_vel_polar(data, pos):
         raise ValueError(
             "Data length must be at least 32 bits for Calculated Track Velocity in Polar Representation"
         )
-    groundspeed = data[pos : pos + 16].uint / (2**14)
+    groundspeed = data[pos : pos + 16].uint * 0.22
     heading = data[pos + 16 : pos + 32].uint * (360.0 / (2**16))
     return {
-        "Groundspeed (NM/s)": groundspeed,
+        "Groundspeed (kt)": groundspeed,
         "Heading (deg)": heading,
     }, 32
 
