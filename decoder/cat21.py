@@ -13,7 +13,7 @@ def decode_cat21(cat, length, data: bitstring.BitArray):
         data = bitstring.BitArray(bin=data)
     
     start = 8  # Start after category byte
-    decoded = {}
+    decoded = {"Category": cat}
     
     # Decode FSPEC (Field Specification)
     fspec_block_1 = data[start:start+7]
@@ -69,16 +69,16 @@ def decode_cat21(cat, length, data: bitstring.BitArray):
                 decoded[item_name] = f"Error decoding: {str(e)}"
                 # Try to continue with next item
                 continue
-        else:
-            # Skip non-essential items but note their presence
-            decoded[f"Non-essential Item FRN {item+1}"] = "Skipped (not in essential list)"
+        # else:
+        #     # Skip non-essential items but note their presence
+        #     decoded[f"Non-essential Item FRN {item+1}"] = "Skipped (not in essential list)"
     
-    print("Decoded CAT21 Essential Data Items:")
-    for key, value in decoded.items():
-        if "Skipped" not in str(value):
-            print(f"  {key}: {value}")
+    # print("Decoded CAT21 Essential Data Items:")
+    # for key, value in decoded.items():
+    #     if "Skipped" not in str(value):
+    #         print(f"  {key}: {value}")
     
-    return data_items_to_decode, decoded, start
+    return decoded#, start
 
 
 ##############################################################################################################################
@@ -331,7 +331,7 @@ def decode_flight_level(data: bytes) -> dict:
         raise ValueError("Flight Level requires 2 bytes (16 bits).")
 
     # Read signed 16-bit value (two’s complement)
-    fl_raw = int.from_bytes(data[0:2], byteorder="big", signed=True)
+    fl_raw = int.from_bytes(data[0:2], byteorder="big", signed=False)
 
     # Apply LSB scaling: 1/4 Flight Level
     flight_level = fl_raw / 4.0

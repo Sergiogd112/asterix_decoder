@@ -648,7 +648,7 @@ def decode_cat48(cat, len_bytes, data: bitstring.BitArray):
                     i + 21 for i, present in enumerate(fspec_block_4) if present
                 ]
 
-    decoded = {}
+    decoded = {"Category": cat}
     for item in data_items_to_decode:
         if item >= len(mapper):
             continue  # Skip undefined

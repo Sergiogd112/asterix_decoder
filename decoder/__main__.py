@@ -9,6 +9,12 @@ def parse_args():
     parser.add_argument("--test-adsb", action="store_true", help="Use test ADS-B data")
     parser.add_argument("--test-all", action="store_true", help="Use all test data")
     parser.add_argument("--parallel", action="store_true", help="Use parallel decoding")
+    parser.add_argument(
+        "--max-messages",
+        type=int,
+        default=None,
+        help="Maximum number of messages to decode",
+    )
     return parser.parse_args()
 
 
@@ -20,11 +26,23 @@ if __name__ == "__main__":
     start = time()
     if args.test_radar:
         decoder = Decoder()
-        decoder.load("Test_Data/datos_asterix_radar.ast", args.parallel)
+        decoder.load(
+            "Test_Data/datos_asterix_radar.ast",
+            args.parallel,
+            max_messages=args.max_messages,
+        )
     if args.test_adsb:
         decoder = Decoder()
-        decoder.load("Test_Data/datos_asterix_adsb.ast", args.parallel)
+        decoder.load(
+            "Test_Data/datos_asterix_adsb.ast",
+            args.parallel,
+            max_messages=args.max_messages,
+        )
     if args.test_all:
         decoder = Decoder()
-        decoder.load("Test_Data/datos_asterix_combinado.ast", args.parallel)
+        decoder.load(
+            "Test_Data/datos_asterix_combinado.ast",
+            args.parallel,
+            max_messages=args.max_messages,
+        )
     print(f"Elapsed Time: {time()-start} s")
