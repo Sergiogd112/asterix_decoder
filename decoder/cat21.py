@@ -42,14 +42,14 @@ def decode_cat21(cat, length, data: bitstring.BitArray):
     
     # ESSENTIAL CAT21 Data Item mapper (only green items from your table)
     cat21_mapper = {
-        1: ("Data Source Identification", lambda d: (decode_data_source_identification(int(d[:16].uint)), 16)),
-        2: ("Target Report Descriptor", lambda d: (decode_target_report_descriptor(d[:d.length].bytes), (d.length + 7) // 8)),
-        7: ("Position in WGS-84 Co-ordinates High Resolution", lambda d: (decode_high_resolution_position(d[:64].bytes), 64)),
-        11: ("Target Address", lambda d: (decode_target_address(d[:24].bytes), 24)),
-        12: ("Time of Message Reception of Position", lambda d: (decode_time_of_message_reception_position(d[:24].bytes), 24)),
-        19: ("Mode 3/A Code", lambda d: (decode_mode_3a_code(int(d[:16].uint)), 16)),
-        21: ("Flight Level", lambda d: (decode_flight_level(d[:16].bytes), 16)),
-        29: ("Target Identification", lambda d: (decode_target_identification(d[:48].bytes), 48)),
+        0: ("Data Source Identification", lambda d: (decode_data_source_identification(int(d[:16].uint)), 16)),
+        1: ("Target Report Descriptor", lambda d: (decode_target_report_descriptor(d[:d.length].bytes), (d.length + 7) // 8)),
+        6: ("Position in WGS-84 Co-ordinates High Resolution", lambda d: (decode_high_resolution_position(d[:64].bytes), 64)),
+        10: ("Target Address", lambda d: (decode_target_address(d[:24].bytes), 24)),
+        11: ("Time of Message Reception of Position", lambda d: (decode_time_of_message_reception_position(d[:24].bytes), 24)),
+        18: ("Mode 3/A Code", lambda d: (decode_mode_3a_code(int(d[:16].uint)), 16)),
+        20: ("Flight Level", lambda d: (decode_flight_level(d[:16]), 16)),
+        28: ("Target Identification", lambda d: (decode_target_identification(d[:48].bytes), 48)),
     }
     
     # Decode each data item
@@ -325,16 +325,16 @@ def decode_mode_3a_code(two_bytes: int) -> dict:
 
 ##############################################################################################################################
 
-def decode_flight_level(data: bytes) -> dict:
+def decode_flight_level(data) -> dict:
     
-    if len(data) < 2:
+    if len(data) < 16:
         raise ValueError("Flight Level requires 2 bytes (16 bits).")
 
     # Read signed 16-bit value (two’s complement)
-    fl_raw = int.from_bytes(data[0:2], byteorder="big", signed=False)
+    fl_raw = data[:16].uint
 
     # Apply LSB scaling: 1/4 Flight Level
-    flight_level = fl_raw / 4.0
+    flight_level = fl_raw / 4.0 -15
 
     # Convert to feet (1 FL = 100 ft)
     altitude_ft = flight_level * 100.0
