@@ -27,9 +27,9 @@ if __name__ == "__main__":
     print(f"Test ADS-B: {args.test_adsb}")
     print(f"Test All: {args.test_all}")
     start = time()
-    radar_lat = (41 + 18 / 60.0 + 2 / 3600.0)*np.pi/180
-    radar_lon = (2 + 6 / 60.0 + 7 / 3600.0)*np.pi/180
-    radar_alt = 27
+    radar_lat = (41 + 18 / 60.0 + 2.5184 / 3600.0)*np.pi/180
+    radar_lon = (2 + 6 / 60.0 + 7.4095 / 3600.0)*np.pi/180
+    radar_alt = 27.25
     coords_radar = CoordinatesWGS84(radar_lat, radar_lon, radar_alt)
 
     if args.test_radar:

@@ -94,3 +94,5 @@ class CoordinatesWGS84(Coordinates):
         degs_lat = self.lat * GeoUtils.RADS2DEGS
         degs_lon = self.lon * GeoUtils.RADS2DEGS
         return f"{lat_str} {lon_str} {self.height:.4f}m\nlat:{degs_lat:.9f} lon:{degs_lon:.9f}"
+    def __repr__(self)-> str:
+        return self.__str__()

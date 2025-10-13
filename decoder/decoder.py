@@ -12,11 +12,11 @@ class Decoder:
     def __init__(self):
         pass
 
-    def split_data(self, bit_data, max_messages=None):
+    def split_data(self, bit_data,max_messages=None):
         result = []
         current_pos = 0
         total_bits = len(bit_data)
-        i = 0
+        i=0
         with tqdm(total=total_bits // 8, desc="Decoding") as pbar:
             while current_pos + 24 <= total_bits:  # Need at least 24 bits for header
                 cat = bit_data[current_pos : current_pos + 8].uint
@@ -25,19 +25,15 @@ class Decoder:
 
                 if data_end > total_bits:
                     break
-
+                
                 data = bit_data[current_pos + 24 : data_end]
                 result.append((cat, length, data))
 
                 current_pos = data_end
                 pbar.update(length)
-                i += 1
+                i+=1
                 if max_messages is not None and i > max_messages:
                     break
-
-            data = bit_data[current_pos + 24 : data_end]
-            result.append((cat, length, data))
-            current_pos = data_end
 
         return result
 
