@@ -1,72 +1,87 @@
 import pandas as pd
 import bitstring
 from tqdm import tqdm
-from .cat21 import decode_cat21
-import multiprocessing
-import os
+from multiprocessing import Pool, cpu_count
 
-# FUNCIÓN HELPER PARA MULTIPROCESSING
-def decode_packet_worker(element):
-    """Decodifica un único paquete de datos. Devuelve los datos si es CAT21, si no None."""
-    try:
-        cat, length, data = element
-        if cat == 21:
-            _, decoded_data, _ = decode_cat21(cat, length, data)
-            return decoded_data
-    except Exception:
-        # Ignora errores en paquetes individuales para no detener todo el proceso
-        pass
-    return None
+from .cat21 import decode_cat21
+
+from .cat48 import decode_cat48
+
 
 class Decoder:
     def __init__(self):
         pass
 
-    def split_data(self, bit_data):
-        """Divide los datos binarios en paquetes ASTERIX individuales."""
+    def split_data(self, bit_data, max_messages=None):
         result = []
         current_pos = 0
         total_bits = len(bit_data)
-        
-        while current_pos + 24 <= total_bits:
-            cat = bit_data[current_pos : current_pos + 8].uint
-            length = bit_data[current_pos + 8 : current_pos + 24].uint
-            data_end = current_pos + (length * 8)
+        i = 0
+        with tqdm(total=total_bits // 8, desc="Decoding") as pbar:
+            while current_pos + 24 <= total_bits:  # Need at least 24 bits for header
+                cat = bit_data[current_pos : current_pos + 8].uint
+                length = bit_data[current_pos + 8 : current_pos + 24].uint
+                data_end = current_pos + (length) * 8
 
-            if data_end > total_bits:
-                break
+                if data_end > total_bits:
+                    break
+
+                data = bit_data[current_pos + 24 : data_end]
+                result.append((cat, length, data))
+
+                current_pos = data_end
+                pbar.update(length)
+                i += 1
+                if max_messages is not None and i > max_messages:
+                    break
 
             data = bit_data[current_pos + 24 : data_end]
             result.append((cat, length, data))
             current_pos = data_end
-        
+
         return result
 
-    def load(self, file_name):
-        """Carga y procesa el archivo ASTERIX usando todos los núcleos de la CPU."""
+    @staticmethod
+    def decode_element(element, radar_coords=None):
+        cat, length, data = element
+        if cat == 48:
+            return decode_cat48(cat, length, data, radar_coords=radar_coords)
+        elif cat == 21:
+            return decode_cat21(cat, length, data)
+        return None
+
+    def load(self, file_name, parallel=True, max_messages=None, radar_coords=None):
         with open(file_name, "rb") as f:
-            self.data = f.read()
-        self.bit_data = bitstring.BitArray(self.data)
-        print(f"Loaded {len(self.data)} bytes from {file_name}")
-
-        print("Dividiendo el archivo en paquetes ASTERIX...")
-        self.splited_data = self.split_data(self.bit_data)
-        print(f"Se encontraron {len(self.splited_data)} paquetes en total.")
-
-        num_cores = os.cpu_count()
-        print(f"Iniciando decodificación en paralelo usando {num_cores} núcleos de CPU...")
-
+            data = f.read()
+        bit_data = bitstring.BitArray(data)
+        print(f"Loaded {len(data)} bytes from {file_name}")
+        splitted_data = self.split_data(bit_data, max_messages)
         decoded_messages = []
-        with multiprocessing.Pool(processes=num_cores) as pool:
-            results_iterator = pool.imap_unordered(decode_packet_worker, self.splited_data)
-            
-            for result in tqdm(results_iterator, total=len(self.splited_data), desc="Procesando paquetes"):
-                if result:
-                    decoded_messages.append(result)
-        
-        print(f"Decodificación completada. Se encontraron {len(decoded_messages)} mensajes de CAT21.")
-        
-        self.export_to_csv(decoded_messages)
+        decode_element = lambda x: Decoder.decode_element(x, radar_coords=radar_coords)
+
+        if parallel:
+            with Pool(processes=min(cpu_count() - 1, 8)) as pool:
+                results = list(
+                    tqdm(
+                        pool.imap(decode_element, splitted_data),
+                        total=len(splitted_data),
+                        desc="Decoding",
+                        unit="Msg",
+                    )
+                )
+        else:
+            results = list(
+                tqdm(
+                    map(decode_element, splitted_data),
+                    total=len(splitted_data),
+                    desc="Decoding",
+                    unit="Msg",
+                )
+            )
+        decoded_messages.extend([msg for msg in results if msg is not None])
+        if max_messages is not None:
+            results = results[:max_messages]
+        return results
 
     def export_to_csv(self, decoded_messages):
         """
@@ -77,7 +92,7 @@ class Decoder:
             return
 
         print("Aplanando datos y generando CSV...")
-        
+
         # Lógica de aplanamiento robusta
         flattened_data = []
         for message in decoded_messages:
@@ -86,16 +101,26 @@ class Decoder:
                 if isinstance(field_value, dict):
                     flat_record.update(field_value)
             flattened_data.append(flat_record)
-        
+
         df = pd.DataFrame(flattened_data)
 
         # Lista de columnas exacta que solicitaste
         cols_to_export = [
-            "SAC", "SIC", "ATP Description", "ARC Description", "RC Description",
-            "RAB Description", "Latitude (deg)", "Longitude (deg)",
-            "ICAO Address (hex)", "Time (s since midnight)", "UTC Time (HH:MM:SS)",
-            "Mode-3/A Code", "Flight Level (FL)", "Altitude (ft)",
-            "Target Identification"
+            "SAC",
+            "SIC",
+            "ATP Description",
+            "ARC Description",
+            "RC Description",
+            "RAB Description",
+            "Latitude (deg)",
+            "Longitude (deg)",
+            "ICAO Address (hex)",
+            "Time (s since midnight)",
+            "UTC Time (HH:MM:SS)",
+            "Mode-3/A Code",
+            "Flight Level (FL)",
+            "Altitude (ft)",
+            "Target Identification",
         ]
 
         # Reordenar y filtrar el DataFrame para que coincida con la lista

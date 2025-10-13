@@ -4,6 +4,8 @@ import pandas as pd
 import bitstring
 from rich import print
 
+from .geoutils import *
+
 
 def decode_dsi(data, pos):
     """Optimized inline version for DSI (fixed length)."""
@@ -18,7 +20,7 @@ def decode_time_of_day(data, pos):
     h = time_of_day // 3600
     m = (time_of_day // 60) % 60
     s = time_of_day % 60
-    return f"{h}:{m}:{s}", 24
+    return {"Time": f"{h}:{m}:{s}"}, 24
 
 
 def decode_target_desc(data, pos):
@@ -127,25 +129,25 @@ def decode_measure_position_slant_polar(data, pos):
     """Optimized inline version (fixed length)."""
     range_nm = data[pos : pos + 16].uint / 256.0
     theta = data[pos + 16 : pos + 32].uint * (360.0 / 65536.0)
-    return {"Range NM": range_nm, "Theta": theta}, 32
+    return {"Range NM": range_nm, "Range m": range_nm * 1852, "Theta": theta}, 32
 
 
 def decode_mode3a_octal(data, pos):
     """Optimized inline version (fixed length, bug fixed for D field)."""
-    octet1 = data[pos : pos + 8].uint
-    octet2 = (
-        data[pos + 8 : pos + 16].uint if len(data) >= pos + 16 else 0
-    )  # Assume full
-    validated = (octet1 >> 7) & 0x1
-    garbled = (octet1 >> 6) & 0x1
-    derived = (octet1 >> 5) & 0x1
+    # octet1 = data[pos : pos + 8].uint
+    # octet2 = (
+    #     data[pos + 8 : pos + 16].uint if len(data) >= pos + 16 else 0
+    # )  # Assume full
+    # validated = (octet1 >> 7) & 0x1
+    # garbled = (octet1 >> 6) & 0x1
+    # derived = (octet1 >> 5) & 0x1
     # Assuming spare bit at >>4, then A at bits 3-0 of octet1? Original slicing suggests A at pos+4:7 (bits4-6)
     # To match original slicing exactly without assuming byte split
     a = data[pos + 4 : pos + 7].uint
     b = data[pos + 7 : pos + 10].uint
     c = data[pos + 10 : pos + 13].uint
     d = data[pos + 13 : pos + 16].uint  # Fixed from original bug
-    return ((a * 10 + b) * 10 + c) * 10 + d, 16
+    return {"Mode3A": ((a * 10 + b) * 10 + c) * 10 + d}, 16
 
 
 def decode_fl_binary(data, pos):
@@ -154,9 +156,11 @@ def decode_fl_binary(data, pos):
     garbled = data[pos + 1]
     fl = data[pos + 2 : pos + 16].uint / 4.0
     return {
-        "Validated": bool(validated),
-        "Garbled": bool(garbled),
+        # "Validated": bool(validated),
+        # "Garbled": bool(garbled),
         "FL": fl,
+        "Height (ft)": fl * 100,
+        "Height (m)": fl * 30.48,
     }, 16
 
 
@@ -229,7 +233,7 @@ def decode_aircraft_address(data, pos):
     """Optimized inline version (fixed length)."""
     address_int = data[pos : pos + 24].uint
     address = f"{address_int:06X}"
-    return address, 24
+    return {"TA": address}, 24
 
 
 def decode_aircraft_id(data, pos):
@@ -249,7 +253,7 @@ def decode_aircraft_id(data, pos):
         else:
             chars.append(" ")  # Invalid
     aircraft_id = "".join(chars).rstrip()
-    return aircraft_id, 48
+    return {"TI": aircraft_id}, 48
 
 
 def decode_BDS_4_0(data, pos):
@@ -350,9 +354,9 @@ mapper_bds = [
     None,
     None,
     None,
-    [("4,0", decode_BDS_4_0)],
-    [("5,0", decode_BDS_5_0)],
-    [("6,0", decode_BDS_6_0)],
+    [decode_BDS_4_0],
+    [decode_BDS_5_0],
+    [decode_BDS_6_0],
 ]
 
 
@@ -385,11 +389,11 @@ def decode_mode_s_mb_data(data, pos):
             print(f"No decoder implemented for BDS {bda1},{bda2}")
             start += 64
             continue
-        bds_name, bds_decoder = bds_entry[bda2]
+        bds_decoder = bds_entry[bda2]
         decoded_bds, _ = bds_decoder(
             data, block_start + 8
         )  # Data starts after 8-bit header per block? Original: data[start + 8 : start + 8 + 56]
-        bds[bds_name] = decoded_bds
+        bds.update(decoded_bds)
         start += 64  # 56 + 8
 
     return bds, required_bits - (
@@ -403,7 +407,8 @@ def decode_track_number(data, pos):
     if len(data) - pos < 16:
         raise ValueError("Data length must be at least 16 bits for Track Number")
     track_num = data[pos + 4 : pos + 16].uint  # Bits 0-3 unused?
-    return track_num, 16
+    return {"TN": track_num}, 16
+    # return {"TrN":track_num}, 16
 
 
 def decode_calculated_pos_in_cart(data, pos):
@@ -423,8 +428,8 @@ def decode_calc_track_vel_polar(data, pos):
     groundspeed = data[pos : pos + 16].uint * 0.22
     heading = data[pos + 16 : pos + 32].uint * (360.0 / (2**16))
     return {
-        "Groundspeed (kt)": groundspeed,
-        "Heading (deg)": heading,
+        "GS(kt)": groundspeed,
+        "HDG(deg)": heading,
     }, 32
 
 
@@ -553,7 +558,7 @@ def decode_com_acas_cap_fl_st(data, pos):
             "Not assigned",
             "Not assigned",
         ][comm_cap_idx],
-        "Flight Status": [
+        "STAT": [
             "No alert, no SPI, airborne",
             "No alert, no SPI, on ground",
             "Alert, no SPI, airborne",
@@ -581,34 +586,33 @@ def decode_com_acas_cap_fl_st(data, pos):
 
 
 mapper = [
-    ("DSI", decode_dsi),
-    ("Time of Day", decode_time_of_day),
-    ("Target Description", decode_target_desc),
-    (
-        "Measured Position in Slant Polar Coordinates",
-        decode_measure_position_slant_polar,
-    ),
-    ("Mode 3/A Octal", decode_mode3a_octal),
-    ("Flight Level (Binary)", decode_fl_binary),
-    ("Radar Plot Characteristics", decode_radar_plot_characteristics),
-    ("Aircraft Address", decode_aircraft_address),
-    ("Aircraft ID", decode_aircraft_id),
-    ("Mode S MB Data", decode_mode_s_mb_data),
-    ("Track Number", decode_track_number),
-    ("Calculated Position in Cartesian Coords", decode_calculated_pos_in_cart),
-    ("Calculated Track Velocity in Polar Representation", decode_calc_track_vel_polar),
-    ("Track Status", decode_track_status),
-    ("Track Quality", decode_track_quality),
-    ("Warning/Error", decode_warning_error),
-    ("Mode-3/A Code Confidence Indicator", decode_mode_3a_code_conf),
-    ("Mode-C Code and Confidence Indicator", decode_mode_c_code_conf),
-    ("Height Measured by 3D Radar", decode_height_3d_radar),
-    ("Radial Doppler Speed", decode_radial_doppler_speed),
-    ("Communications / ACAS Capability and Flight Status", decode_com_acas_cap_fl_st),
+    decode_dsi,
+    decode_time_of_day,
+    decode_target_desc,
+    decode_measure_position_slant_polar,
+    decode_mode3a_octal,
+    decode_fl_binary,
+    decode_radar_plot_characteristics,
+    decode_aircraft_address,
+    decode_aircraft_id,
+    decode_mode_s_mb_data,
+    decode_track_number,
+    decode_calculated_pos_in_cart,
+    decode_calc_track_vel_polar,
+    decode_track_status,
+    decode_track_quality,
+    decode_warning_error,
+    decode_mode_3a_code_conf,
+    decode_mode_c_code_conf,
+    decode_height_3d_radar,
+    decode_radial_doppler_speed,
+    decode_com_acas_cap_fl_st,
 ]
 
 
-def decode_cat48(cat, len_bytes, data: bitstring.BitArray):
+def decode_cat48(
+    cat, len_bytes, data: bitstring.BitArray, radar_coords: CoordinatesWGS84 = None
+):
     """Optimized version using position tracking to avoid repeated slicing."""
     if cat != 48:
         raise ValueError("Category must be 48 for DecodeCat48")
@@ -652,9 +656,33 @@ def decode_cat48(cat, len_bytes, data: bitstring.BitArray):
     for item in data_items_to_decode:
         if item >= len(mapper):
             continue  # Skip undefined
-        item_name, decoder = mapper[item]
+        decoder = mapper[item]
         result, step = decoder(data, pos)
-        decoded[item_name] = result
+        decoded.update(result)
         pos += step
 
+    if (
+        radar_coords
+        and "Range m" in decoded
+        and "Theta" in decoded
+        and "Height (m)" in decoded
+    ):
+        # Convert polar to Cartesian coordinates
+        r = decoded["Range m"]
+        theta_rad = np.deg2rad(decoded["Theta"])
+        H = decoded["Height (m)"]
+        elevation_rad = np.asin((H - radar_coords.height) / r)
+        coords_polar = CoordinatesPolar(r, theta_rad, elevation_rad)
+        coords_cart = GeoUtils.change_radar_spherical_2_radar_cartesian(coords_polar)
+        coords_geocentric = GeoUtils().change_radar_cartesian_2_geocentric(
+            radar_coordinates=radar_coords, cartesian_coordinates=coords_cart
+        )
+        coords_geodesic = GeoUtils().change_geocentric_2_geodesic(coords_geocentric)
+        decoded.update(
+            {
+                "Latitude": coords_geodesic.lat * 180.0 / np.pi,
+                "Longitude": coords_geodesic.lon * 180.0 / np.pi,
+                "Height (m)": coords_geodesic.height,
+            }
+        )
     return decoded

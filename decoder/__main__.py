@@ -1,6 +1,9 @@
 import argparse
 from time import time
+from rich import print
+import numpy as np
 from .decoder import Decoder
+from .geoutils import CoordinatesWGS84
 
 
 def parse_args():
@@ -24,25 +27,35 @@ if __name__ == "__main__":
     print(f"Test ADS-B: {args.test_adsb}")
     print(f"Test All: {args.test_all}")
     start = time()
+    radar_lat = (41 + 18 / 60.0 + 2 / 3600.0)*np.pi/180
+    radar_lon = (2 + 6 / 60.0 + 7 / 3600.0)*np.pi/180
+    radar_alt = 27
+    coords_radar = CoordinatesWGS84(radar_lat, radar_lon, radar_alt)
+
     if args.test_radar:
         decoder = Decoder()
-        decoder.load(
+        decoded=decoder.load(
             "Test_Data/datos_asterix_radar.ast",
             args.parallel,
             max_messages=args.max_messages,
+            radar_coords=coords_radar,
         )
     if args.test_adsb:
         decoder = Decoder()
-        decoder.load(
+        decoded=decoder.load(
             "Test_Data/datos_asterix_adsb.ast",
             args.parallel,
             max_messages=args.max_messages,
+            radar_coords=coords_radar,
         )
     if args.test_all:
         decoder = Decoder()
-        decoder.load(
+        decoded=decoder.load(
             "Test_Data/datos_asterix_combinado.ast",
             args.parallel,
             max_messages=args.max_messages,
+            radar_coords=coords_radar,
         )
+    print(f"Decoded {len(decoded)} messages")
+    print(decoded)
     print(f"Elapsed Time: {time()-start} s")
