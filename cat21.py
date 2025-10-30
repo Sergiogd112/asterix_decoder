@@ -66,7 +66,7 @@ def skip_repetitive_mode_s_mb(data: bitstring.BitArray):
         
     return None, bits_processed
 
-# --- Tus funciones de decodificación (sin cambios) ---
+# --- Funciones de decodificación ---
 
 def decode_data_source_id(data: bitstring.BitArray):
     if len(data) < 16: raise ValueError("Datos insuficientes para Data Source ID.")
@@ -165,8 +165,7 @@ def decode_target_identification(data: bitstring.BitArray):
             chars += chr(char_code)
     return {"Target Identification": chars.strip()}, 48
 
-# --- MAPA UAP COMPLETO (Basado en cat021-v2.1.pdf Tabla 2) ---
-# Esto reemplaza tu 'fspec_map'. Ahora contiene TODOS los FRNs.
+# --- MAPA UAP COMPLETO ---
 # (Nombre, Especificación de Longitud, Función de Decodificación)
 # Si la función es un 'skip', el valor decodificado será None.
 
