@@ -129,7 +129,7 @@ def decode_measure_position_slant_polar(data, pos):
     """Optimized inline version (fixed length)."""
     range_nm = data[pos : pos + 16].uint / 256.0
     theta = data[pos + 16 : pos + 32].uint * (360.0 / 65536.0)
-    return {"Range NM": range_nm, "Range m": range_nm * 1852, "Theta": theta}, 32
+    return {"Range (NM)": range_nm, "Range (m)": range_nm * 1852, "Theta": theta}, 32
 
 
 def decode_mode3a_octal(data, pos):
@@ -147,7 +147,7 @@ def decode_mode3a_octal(data, pos):
     b = data[pos + 7 : pos + 10].uint
     c = data[pos + 10 : pos + 13].uint
     d = data[pos + 13 : pos + 16].uint  # Fixed from original bug
-    return {"Mode3A": ((a * 10 + b) * 10 + c) * 10 + d}, 16
+    return {"Mode-3/A Code": ((a * 10 + b) * 10 + c) * 10 + d}, 16
 
 
 def decode_fl_binary(data, pos):
@@ -158,7 +158,7 @@ def decode_fl_binary(data, pos):
     return {
         # "Validated": bool(validated),
         # "Garbled": bool(garbled),
-        "FL": fl,
+        "Flight Level (FL)": fl,
         "Height (ft)": fl * 100,
         "Height (m)": fl * 30.48,
     }, 16
@@ -253,7 +253,7 @@ def decode_aircraft_id(data, pos):
         else:
             chars.append(" ")  # Invalid
     aircraft_id = "".join(chars).rstrip()
-    return {"TI": aircraft_id}, 48
+    return {"Target Identification": aircraft_id}, 48
 
 
 def decode_BDS_4_0(data, pos):
@@ -661,15 +661,19 @@ def decode_cat48(
         if result is not None:
             decoded.update(result)
         pos += step
-
     if (
         radar_coords
-        and "Range m" in decoded
+        and "Range (m)" in decoded
         and "Theta" in decoded
-        and "Height (m)" in decoded
+        # and "Height (m)" in decoded
     ):
+        if "Height (m)" not in decoded and "STAT" in decoded and decoded["STAT"].endswith("ground"):
+            decoded["Flight Level (FL)"]=decoded["Height (m)"]=decoded["Height (ft)"]=0
+        elif "Height (m)" not in decoded:
+            return decoded
+        
         # Convert polar to Cartesian coordinates
-        r = decoded["Range m"]
+        r = decoded["Range (m)"]
         theta_rad = np.deg2rad(decoded["Theta"])
         H = decoded["Height (m)"]
         elevation_rad = np.asin((H - radar_coords.height) / r)
@@ -681,8 +685,8 @@ def decode_cat48(
         coords_geodesic = GeoUtils().change_geocentric_2_geodesic(coords_geocentric)
         decoded.update(
             {
-                "Latitude": coords_geodesic.lat * 180.0 / np.pi,
-                "Longitude": coords_geodesic.lon * 180.0 / np.pi,
+                "Latitude (deg)": coords_geodesic.lat * 180.0 / np.pi,
+                "Longitude (deg)": coords_geodesic.lon * 180.0 / np.pi,
                 "Height (m)": coords_geodesic.height,
             }
         )

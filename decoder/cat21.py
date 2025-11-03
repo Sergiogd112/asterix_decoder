@@ -235,7 +235,7 @@ def decode_cat21(cat, length, data: bitstring.BitArray):
         raise ValueError("La categoría debe ser 21")
 
     pos = 0
-    decoded = {}
+    decoded = {"Category": cat}
     
     # Decodifica el FSPEC (puede tener múltiples octetos)
     fspec_data = []

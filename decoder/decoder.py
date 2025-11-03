@@ -106,6 +106,7 @@ class Decoder:
 
         # Lista de columnas exacta que solicitaste
         cols_to_export = [
+            "Category"
             "SAC",
             "SIC",
             "ATP Description",
@@ -121,6 +122,15 @@ class Decoder:
             "Flight Level (FL)",
             "Altitude (ft)",
             "Target Identification",
+            "Range (m)"
+            "Theta",
+            "TA",
+            "Barometric Pressure Setting",
+            "GS(kts)",
+            "HDG(deg)"
+            "IAS",
+            "Mach",
+            "STAT"
         ]
 
         # Reordenar y filtrar el DataFrame para que coincida con la lista

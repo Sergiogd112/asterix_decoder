@@ -10,7 +10,7 @@
             "type": "debugpy",
             "request": "launch",
             "module": "decoder",
-            "args": ["--test-radar","--parallel"]
+            "args": ["--test-radar","--parallel","--max-messages","10000"]
         }
     ]
 }
