@@ -658,7 +658,8 @@ def decode_cat48(
             continue  # Skip undefined
         decoder = mapper[item]
         result, step = decoder(data, pos)
-        decoded.update(result)
+        if result is not None:
+            decoded.update(result)
         pos += step
 
     if (

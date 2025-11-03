@@ -17,7 +17,7 @@ class Decoder:
         current_pos = 0
         total_bits = len(bit_data)
         i=0
-        with tqdm(total=total_bits // 8, desc="Decoding") as pbar:
+        with tqdm(total=total_bits // 8, desc="Splitting") as pbar:
             while current_pos + 24 <= total_bits:  # Need at least 24 bits for header
                 cat = bit_data[current_pos : current_pos + 8].uint
                 length = bit_data[current_pos + 8 : current_pos + 24].uint
@@ -37,8 +37,9 @@ class Decoder:
 
         return result
 
-    @staticmethod
-    def decode_element(element, radar_coords=None):
+    
+
+    def _decode_element(self, element, radar_coords=None):
         cat, length, data = element
         if cat == 48:
             return decode_cat48(cat, length, data, radar_coords=radar_coords)
@@ -53,13 +54,16 @@ class Decoder:
         print(f"Loaded {len(data)} bytes from {file_name}")
         splitted_data = self.split_data(bit_data, max_messages)
         decoded_messages = []
-        decode_element = lambda x: Decoder.decode_element(x, radar_coords=radar_coords)
-
+        
+        # Create a partial function with radar_coords
+        from functools import partial
+        decode_func = partial(self._decode_element, radar_coords=radar_coords)
+        
         if parallel:
             with Pool(processes=min(cpu_count() - 1, 8)) as pool:
                 results = list(
                     tqdm(
-                        pool.imap(decode_element, splitted_data),
+                        pool.imap(decode_func, splitted_data),
                         total=len(splitted_data),
                         desc="Decoding",
                         unit="Msg",
@@ -68,7 +72,7 @@ class Decoder:
         else:
             results = list(
                 tqdm(
-                    map(decode_element, splitted_data),
+                    map(decode_func, splitted_data),
                     total=len(splitted_data),
                     desc="Decoding",
                     unit="Msg",

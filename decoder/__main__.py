@@ -57,5 +57,5 @@ if __name__ == "__main__":
             radar_coords=coords_radar,
         )
     print(f"Decoded {len(decoded)} messages")
-    print(decoded)
+    # print(decoded)
     print(f"Elapsed Time: {time()-start} s")
