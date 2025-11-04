@@ -20,7 +20,8 @@ def decode_time_of_day(data, pos):
     h = time_of_day // 3600
     m = (time_of_day // 60) % 60
     s = time_of_day % 60
-    return {"Time": f"{h}:{m}:{s}"}, 24
+    return {"UTC Time (HH:MM:SS)": f"{h}:{m}:{s}",
+            "Time (s since midnight)": time_of_day}, 24
 
 
 def decode_target_desc(data, pos):

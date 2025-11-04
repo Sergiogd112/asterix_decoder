@@ -149,7 +149,8 @@ def decode_flight_level(data: bitstring.BitArray):
 
     return {
         "Flight Level (FL)": flight_level_corrected,
-        "Altitude (ft)": flight_level_corrected * 100
+        "Altitude (ft)": flight_level_corrected * 100,
+        "Height (m)": flight_level_corrected * 30.48
     }, 16
 
 def decode_target_identification(data: bitstring.BitArray):
@@ -278,7 +279,7 @@ def decode_cat21(cat, length, data: bitstring.BitArray):
             
             if decoded_value is not None:
                 # Si no era una función de salto, guardar el valor
-                decoded[item_name] = decoded_value
+                decoded.update( decoded_value)
                 
             pos += bits_processed
 
@@ -291,4 +292,4 @@ def decode_cat21(cat, length, data: bitstring.BitArray):
             print(f"[ERROR] Error inesperado en FRN {frn} ('{item_name}'): {e}. Deteniendo este paquete.")
             break
     
-    return [], decoded, pos
+    return decoded
