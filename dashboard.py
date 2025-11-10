@@ -194,6 +194,7 @@ class Dashboard:
         self.is_playing = True
         self.playback_speed = 10.0
         self.last_update_time = 0
+        self.clicked_aircraft_id = None
 
     def _play_callback(self):
         self.is_playing = True
@@ -231,9 +232,6 @@ class Dashboard:
         lat_min = 40.9
         lon_max = 2.6
         lon_min = 1.5
-        lat_lon_ratio = (lat_max - lat_min) / (lon_max - lon_min)
-        plot_width = 1000
-        plot_height = int(plot_width * lat_lon_ratio)
 
         with dpg.window(tag="Primary Window"):
             with dpg.group(horizontal=True):
@@ -255,61 +253,74 @@ class Dashboard:
                 callback=self._frame_slider_callback,
             )
 
-            with dpg.plot(
-                label="Aircraft Map",
-                height=plot_height,
-                width=plot_width,
-                tag="map_plot",
-            ):
-                dpg.add_plot_legend()
+            with dpg.group(horizontal=True):
+                with dpg.plot(
+                    label="Aircraft Map",
+                    height=-1,
+                    width=-1,
+                    tag="map_plot",
+                    equal_aspects=True,
+                ):
+                    dpg.add_plot_legend()
 
-                # Setup axes first
-                dpg.add_plot_axis(dpg.mvXAxis, label="Longitude (deg)", tag="x_axis")
-                dpg.add_plot_axis(dpg.mvYAxis, label="Latitude (deg)", tag="y_axis")
-                dpg.set_axis_limits("x_axis", lon_min, lon_max)
-                dpg.set_axis_limits("y_axis", lat_min, lat_max)
+                    # Setup axes first
+                    dpg.add_plot_axis(dpg.mvXAxis, label="Longitude (deg)", tag="x_axis", lock_min=True, lock_max=True)
+                    dpg.add_plot_axis(dpg.mvYAxis, label="Latitude (deg)", tag="y_axis", lock_min=True, lock_max=True)
+                    dpg.set_axis_limits("x_axis", lon_min, lon_max)
+                    dpg.set_axis_limits("y_axis", lat_min, lat_max)
 
-                # Add static map features
-                dpg.add_line_series(
-                    coast_data[0].tolist(), coast_data[1].tolist(), label="Coastline", parent="y_axis"
-                )
-                dpg.add_line_series(
-                    runway_L_data[0].tolist(),
-                    runway_L_data[1].tolist(),
-                    label="Runway L",
-                    parent="y_axis",
-                )
-                dpg.add_line_series(
-                    runway_R_data[0].tolist(),
-                    runway_R_data[1].tolist(),
-                    label="Runway R",
-                    parent="y_axis",
-                )
-                dpg.add_line_series(
-                    runway_diag_data[0].tolist(),
-                    runway_diag_data[1].tolist(),
-                    label="Runway Diagonal",
-                    parent="y_axis",
-                )
-
-                # Create scatter series for each aircraft
-                for aid in self.all_aircraft_ids:
-                    self.aircraft_series[aid] = dpg.add_scatter_series(
-                        x=[], y=[], label=aid, parent="y_axis"
+                    # Add static map features
+                    dpg.add_line_series(
+                        coast_data[0].tolist(), coast_data[1].tolist(), label="Coastline", parent="y_axis"
                     )
+                    dpg.add_line_series(
+                        runway_L_data[0].tolist(),
+                        runway_L_data[1].tolist(),
+                        label="Runway L",
+                        parent="y_axis",
+                    )
+                    dpg.add_line_series(
+                        runway_R_data[0].tolist(),
+                        runway_R_data[1].tolist(),
+                        label="Runway R",
+                        parent="y_axis",
+                    )
+                    dpg.add_line_series(
+                        runway_diag_data[0].tolist(),
+                        runway_diag_data[1].tolist(),
+                        label="Runway Diagonal",
+                        parent="y_axis",
+                    )
+
+                    # Create scatter series for each aircraft
+                    for aid in self.all_aircraft_ids:
+                        self.aircraft_series[aid] = dpg.add_scatter_series(
+                            x=[], y=[], parent="y_axis"
+                        )
+                
+                with dpg.group():
+                    dpg.add_text("Clicked Aircraft Info:")
+                    dpg.add_text("ID: N/A", tag="clicked_id")
+                    dpg.add_text("Height: N/A", tag="clicked_height")
+                    dpg.add_text("Time: N/A", tag="clicked_time")
+
+        with dpg.window(tag="custom_tooltip", show=False, no_title_bar=True, no_resize=True, no_move=True, autosize=True):
+            dpg.add_text("", tag="tooltip_text")
 
         dpg.create_viewport(
             title="ASTERIX Aircraft Playback",
-            width=plot_width + 40,
-            height=plot_height + 120,
+            resizable=True,
         )
         dpg.setup_dearpygui()
         dpg.show_viewport()
+        dpg.set_primary_window("Primary Window", True)
+
 
         self._update_plot()
         self.last_update_time = time.time()
 
         while dpg.is_dearpygui_running():
+            # Animation logic
             if self.is_playing:
                 time_per_frame = 1.0 / self.playback_speed
                 now = time.time()
@@ -320,6 +331,63 @@ class Dashboard:
                     dpg.set_value("frame_slider", self.current_frame)
                     self._update_plot()
                     self.last_update_time = now
+
+            # Hover and click logic
+            frame_data = self.per_frame_df[self.per_frame_df["frame"] == self.current_frame]
+            
+            closest_aircraft = None
+            is_hovering_plot = dpg.is_item_hovered("map_plot")
+
+            if is_hovering_plot:
+                mouse_pos = dpg.get_plot_mouse_pos()
+                mx, my = mouse_pos[0], mouse_pos[1]
+
+                plot_limits_x = dpg.get_axis_limits("x_axis")
+                plot_width_units = plot_limits_x[1] - plot_limits_x[0]
+                threshold = plot_width_units / 100 
+                threshold_sq = threshold * threshold
+                
+                min_dist_sq = float('inf')
+                
+                for _, row in frame_data.iterrows():
+                    px, py = row["Longitude (deg)"], row["Latitude (deg)"]
+                    dist_sq = (mx - px)**2 + (my - py)**2
+                    if dist_sq < min_dist_sq:
+                        min_dist_sq = dist_sq
+                        closest_aircraft = row
+
+                if closest_aircraft is not None and min_dist_sq < threshold_sq:
+                    info = (
+                        f"ID: {closest_aircraft['Target Identification']}\n"
+                        f"Height: {closest_aircraft['Height (m)']:.2f} m\n"
+                        f"Time: {closest_aircraft['Time (s since midnight)']} s"
+                    )
+                    dpg.set_value("tooltip_text", info)
+                    
+                    # Position and show tooltip
+                    mouse_pos_global = dpg.get_mouse_pos()
+                    dpg.set_item_pos("custom_tooltip", [mouse_pos_global[0] + 15, mouse_pos_global[1] + 15])
+                    dpg.configure_item("custom_tooltip", show=True)
+                else:
+                    dpg.configure_item("custom_tooltip", show=False)
+                    closest_aircraft = None # Reset if not close enough
+            else:
+                dpg.configure_item("custom_tooltip", show=False)
+
+            if dpg.is_item_clicked("map_plot") and closest_aircraft is not None:
+                self.clicked_aircraft_id = closest_aircraft['Target Identification']
+
+            if self.clicked_aircraft_id:
+                clicked_aircraft_data = frame_data[frame_data["Target Identification"] == self.clicked_aircraft_id]
+                if not clicked_aircraft_data.empty:
+                    dpg.set_value("clicked_id", f"ID: {clicked_aircraft_data.iloc[0]['Target Identification']}")
+                    dpg.set_value("clicked_height", f"Height: {clicked_aircraft_data.iloc[0]['Height (m)']:.2f} m")
+                    dpg.set_value("clicked_time", f"Time: {clicked_aircraft_data.iloc[0]['Time (s since midnight)']} s")
+                else:
+                    dpg.set_value("clicked_id", f"ID: {self.clicked_aircraft_id} (out of frame)")
+                    dpg.set_value("clicked_height", "Height: N/A")
+                    dpg.set_value("clicked_time", "Time: N/A")
+
 
             dpg.render_dearpygui_frame()
 
