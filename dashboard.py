@@ -19,15 +19,139 @@ from collections import defaultdict
 import pandas as pd
 from dash import Dash, dcc, html, Input, Output, State, callback_context, no_update
 import plotly.express as px
+import plotly.graph_objects as go
 import numpy as np
+from tqdm import tqdm
 
 from asgiref.wsgi import WsgiToAsgi
 
 from decoder.decoder import Decoder
 from decoder.geoutils import CoordinatesWGS84
+from mapdata import *
 
 
 DEFAULT_DATA = "Test_Data/datos_asterix_combinado.ast"
+
+
+def generate_per_frame_df(df: pd.DataFrame):
+    before_missing_count = df["Height (m)"].isna().sum()
+    before_missing_mask = df["Height (m)"].isna()
+
+    def _time_weight_interp(g):
+        g = g.sort_values("Time (s since midnight)").copy()
+        t = g["Time (s since midnight)"].astype(float).to_numpy()
+        h = g["Height (m)"].to_numpy(dtype=float)
+        mask_known = ~np.isnan(h)
+        non_na = int(mask_known.sum())
+        if non_na == 0:
+            # nothing to do for this aircraft
+            return g
+        if non_na == 1:
+            # Only a single known value: fill entire group with that value
+            single_val = float(h[mask_known][0])
+            g["Height (m)"] = single_val
+            return g
+        # Use numpy.interp which performs linear interpolation in x (time).
+        t_known = t[mask_known]
+        h_known = h[mask_known]
+        # np.interp will fill values outside known xp with edge values (good for endpoint filling).
+        h_interp = np.interp(t, t_known, h_known)
+        g["Height (m)"] = h_interp
+        return g
+
+    # Apply per-aircraft interpolation using time as the independent variable
+    df = df.groupby("Target Identification", group_keys=False).apply(
+        _time_weight_interp
+    )
+
+    after_missing_count = df["Height (m)"].isna().sum()
+    print("Missing Height (m) after :", after_missing_count)
+
+    # Show a few example rows that were NaN before but are now filled:
+    filled_rows = df[~df["Height (m)"].isna() & before_missing_mask]
+    rows = []
+    for aid, g in tqdm(df.groupby("Target Identification")):
+        g = g.sort_values("frame")
+        minf = int(g["frame"].min())
+        maxf = int(g["frame"].max())
+        frames_all = np.arange(minf, maxf + 1, dtype=int)
+
+        # Aggregate existing known values per frame (mean if multiple records per frame)
+        agg = g.groupby("frame").agg(
+            {"Latitude (deg)": "mean", "Longitude (deg)": "mean", "Height (m)": "mean"}
+        )
+        # Reindex to include all frames in the span
+        agg = agg.reindex(frames_all)
+        agg = agg.reset_index()
+        # Ensure the frame column exists and is integer
+        if "frame" not in agg.columns and "index" in agg.columns:
+            agg = agg.rename(columns={"index": "frame"})
+        agg["frame"] = agg["frame"].astype(int)
+
+        # Interpolate each coordinate using the frame integer as x-axis
+        for col in ["Latitude (deg)", "Longitude (deg)", "Height (m)"]:
+            vals = agg[col].to_numpy(dtype=float)
+            # known points mask
+            known = ~np.isnan(vals)
+            if known.sum() == 0:
+                # leave as NaN
+                interp_vals = np.full_like(vals, np.nan, dtype=float)
+            elif known.sum() == 1:
+                # single known value -> propagate to all frames
+                single_val = float(vals[known][0])
+                interp_vals = np.full_like(vals, single_val, dtype=float)
+            else:
+                xp = agg["frame"].to_numpy(dtype=float)[known]
+                fp = vals[known]
+                # np.interp fills values outside xp with the edge values (desired behavior)
+                interp_vals = np.interp(agg["frame"].to_numpy(dtype=float), xp, fp)
+            agg[col] = interp_vals
+
+        # Add identification and time columns. Use frame as Time (s since midnight) per your requirement.
+        agg["Target Identification"] = aid
+        agg["Time (s since midnight)"] = agg["frame"].astype(float)
+        # Optionally carry Category if available (take first non-null)
+        try:
+            cat = g["Category"].dropna().iloc[0]
+        except Exception:
+            cat = np.nan
+        agg["Category"] = cat
+
+        rows.append(
+            agg[
+                [
+                    "Category",
+                    "frame",
+                    "Target Identification",
+                    "Time (s since midnight)",
+                    "Latitude (deg)",
+                    "Longitude (deg)",
+                    "Height (m)",
+                ]
+            ]
+        )
+
+    # Concatenate all aircraft frames into a single DataFrame
+    per_frame_df = (
+        pd.concat(rows, ignore_index=True)
+        if rows
+        else pd.DataFrame(
+            columns=[
+                "Category",
+                "frame",
+                "Target Identification",
+                "Time (s since midnight)",
+                "Latitude (deg)",
+                "Longitude (deg)",
+                "Height (m)",
+            ]
+        )
+    )
+    # Sort for convenience
+    per_frame_df = per_frame_df.sort_values(
+        ["frame", "Target Identification"]
+    ).reset_index(drop=True)
+    return per_frame_df
 
 
 def load_messages(data_file: str, parallel: bool = True, max_messages=None):
@@ -64,222 +188,145 @@ def build_app(df: pd.DataFrame):
 
     The returned ASGI app is wrapped outside this function.
     """
-    dash_app = Dash(__name__, suppress_callback_exceptions=True)
+    print("Building Dash app...")
+    dash_app = Dash(__name__)
 
-    max_frame = int(df["frame"].max()) if not df.empty else 0
-    min_frame = int(df["frame"].min()) if not df.empty else 0
-    print(f"Max frame: {max_frame}")
+    per_frame_df = generate_per_frame_df(df)
+    per_frame_df = per_frame_df.dropna(subset=["Latitude (deg)", "Longitude (deg)"])
+    print("Creating figure...")
+    lat_max = 41.7
+    lat_min = 40.9
+    lon_max = 2.6
+    lon_min = 1.5
+    lat_lon_ratio = (lat_max - lat_min) / (lon_max - lon_min)
+    # Create static traces for map features
+    static_traces = [
+        go.Scatter(
+            x=coast_data[0],
+            y=coast_data[1],
+            mode="lines",
+            line=dict(color="black", width=1),
+            name="Coastline",
+            showlegend=False,
+        ),
+        go.Scatter(
+            x=runway_L_data[0],
+            y=runway_L_data[1],
+            mode="lines",
+            line=dict(color="red", width=4),
+            name="Runway L",
+        ),
+        go.Scatter(
+            x=runway_R_data[0],
+            y=runway_R_data[1],
+            mode="lines",
+            line=dict(color="blue", width=4),
+            name="Runway R",
+        ),
+        go.Scatter(
+            x=runway_diag_data[0],
+            y=runway_diag_data[1],
+            mode="lines",
+            line=dict(color="green", width=4),
+            name="Runway Diagonal",
+        ),
+    ]
+
+    if not per_frame_df.empty:
+        # Create animated scatter plot for aircraft
+        fig = px.scatter(
+            per_frame_df,
+            x="Longitude (deg)",
+            y="Latitude (deg)",
+            animation_frame="frame",
+            animation_group="Target Identification",
+            hover_name="Target Identification",
+            hover_data={
+                "Height (m)": True,
+                "Time (s since midnight)": True,
+            },
+            color="Target Identification",
+            range_x=[lon_min, lon_max],
+            range_y=[lat_min, lat_max],
+            height=800,
+            width=int(800 / lat_lon_ratio),
+        )
+
+        # Add static traces to each frame of the animation
+        for frame in fig.frames:
+            frame.data += tuple(static_traces)
+
+        # Add static traces to the base figure
+        fig.add_traces(static_traces)
+
+    else:
+        # If there's no data, create a static map
+        fig = go.Figure(
+            data=static_traces,
+            layout=go.Layout(
+                xaxis=dict(range=[lon_min, lon_max]),
+                yaxis=dict(range=[lat_min, lat_max]),
+                height=800,
+                width=int(800 / lat_lon_ratio),
+            ),
+        )
+
+    fig.update_layout(margin={"r": 0, "t": 0, "l": 0, "b": 0})
+    print("Configuring animation...")
     dash_app.layout = html.Div(
         [
             html.H3("ASTERIX Aircraft Playback"),
-            dcc.Graph(id="map", style={"height": "80vh"}),
             html.Div(
                 [
-                    html.Button("Play", id="btn-play", n_clicks=0),
-                    html.Button("Pause", id="btn-pause", n_clicks=0),
-                    html.Button("Faster", id="btn-faster", n_clicks=0),
-                    html.Button("Slower", id="btn-slower", n_clicks=0),
-                    html.Span(id="speed-display", style={"marginLeft": "1rem"}),
+                    html.Label("Playback Speed (frames/sec):"),
+                    dcc.Slider(
+                        id="speed-slider",
+                        min=1,
+                        max=60,
+                        step=1,
+                        value=10,
+                        marks={i: str(i) for i in range(0, 60, 5)},
+                    ),
                 ],
-                style={"display": "flex", "alignItems": "center", "gap": "10px"},
+                style={"width": "50%", "margin-bottom": "20px"},
             ),
-            html.Div([
-                html.Label("Frame: ", style={"marginRight": "10px"}),
-                dcc.Input(
-                    id="frame-input",
-                    type="number",
-                    min=min_frame,
-                    max=max_frame,
-                    value=min_frame,
-                    style={"width": "100px"}
-                ),
-                html.Span(f" / {max_frame}", style={"marginLeft": "10px"}),
-            ], style={"display": "flex", "alignItems": "center", "margin": "10px 0"}),
-            dcc.Interval(id="interval", interval=1000, disabled=True),
-            # Store current interval (ms) and playing state
-            dcc.Store(
-                id="store-interval", data={"interval_ms": 1000, "playing": False}
-            ),
-            dcc.Store(id="store-df", data=df.to_dict(orient="records")),
+            dcc.Graph(id="map", figure=fig, style={"height": "80vh"}),
         ],
         style={"margin": "12px", "fontFamily": "Arial, sans-serif"},
     )
 
     @dash_app.callback(
-        Output("store-interval", "data"),
-        Output("interval", "interval"),
-        Output("interval", "disabled"),
-        Output("btn-play", "style"),
-        Output("btn-pause", "style"),
-        Input("btn-play", "n_clicks"),
-        Input("btn-pause", "n_clicks"),
-        Input("btn-faster", "n_clicks"),
-        Input("btn-slower", "n_clicks"),
-        State("store-interval", "data"),
-    )
-    def control_playback(n_play, n_pause, n_faster, n_slower, store):
-        # store: {interval_ms, playing}
-        interval_ms = store.get("interval_ms", 1000)
-        playing = store.get("playing", False)
-
-        ctx = callback_context
-        if not ctx.triggered:
-            button_styles = (
-                {"display": "none"} if playing else {},
-                {} if playing else {"display": "none"},
-            )
-            return store, interval_ms, not playing, *button_styles
-
-        prop = ctx.triggered[0]["prop_id"].split(".")[0]
-
-        if prop == "btn-play":
-            playing = True
-        elif prop == "btn-pause":
-            playing = False
-        elif prop == "btn-faster":
-            interval_ms = max(50, int(interval_ms * 0.5))
-        elif prop == "btn-slower":
-            interval_ms = int(interval_ms * 2)
-
-        store = {"interval_ms": interval_ms, "playing": playing}
-        button_styles = (
-            {"display": "none"} if playing else {},
-            {} if playing else {"display": "none"},
-        )
-        return store, interval_ms, not playing, *button_styles
-
-    @dash_app.callback(
-        Output("frame-input", "value"),
-        Input("interval", "n_intervals"),
-        Input("frame-input", "value"),
-        State("frame-input", "max"),
-        State("store-interval", "data"),
-    )
-    def advance_frame(n_intervals, current_frame, max_val, store):
-        ctx = callback_context
-        if not ctx.triggered:
-            return no_update
-            
-        trigger_id = ctx.triggered[0]["prop_id"].split(".")[0]
-        
-        if trigger_id == "frame-input":
-            # Manual input
-            try:
-                frame = int(current_frame)
-                if frame < 0:
-                    return 0
-                if frame > max_val:
-                    return max_val
-                return frame
-            except (ValueError, TypeError):
-                return 0
-        
-        # Automatic advance
-        if n_intervals is None or not store.get("playing", False):
-            return no_update
-        
-        next_frame = int(current_frame + 1)
-        if next_frame > max_val:
-            next_frame = 0
-        return next_frame
-
-    @dash_app.callback(
         Output("map", "figure"),
-        Input("frame-input", "value"),
-        # State("store-df", "data"),
-        State("map", "relayoutData"),
+        Input("speed-slider", "value"),
+        State("map", "figure"),
+        prevent_initial_call=True,
     )
-    def update_map(frame, relayoutData):
-        df_local = df#pd.DataFrame(records)
-        if df_local.empty:
-            fig = px.scatter_map(lat=[], lon=[], zoom=9)
-            fig.update_layout(mapbox_style="open-street-map")
-            return fig
+    def update_animation_speed(speed, fig):
+        if not fig or not speed:
+            return no_update
+        if speed <= 1:
+            speed = 1
 
-        frame = int(frame)
-        df_frame = df_local[df_local["frame"] == frame]
-        if df_frame.empty:
-            # empty frame -> return blank map centered on data
-            center = {
-                "lat": df_local["Latitude (deg)"].mean(),
-                "lon": df_local["Longitude (deg)"].mean(),
-            }
-            fig = px.scatter_map(lat=[], lon=[], center=center, zoom=9)
-            fig.update_layout(mapbox_style="open-street-map")
-            return fig
+        duration = 1000 / speed
 
-        # Preserve the current map view if available
-        if relayoutData and "mapbox.center" in relayoutData:
-            center = relayoutData["mapbox.center"]
-            zoom = relayoutData.get("mapbox.zoom", 9)
-        else:
-            center = {
-                "lat": df_frame["Latitude (deg)"].mean(),
-                "lon": df_frame["Longitude (deg)"].mean(),
-            }
-            zoom = 9
-
-        fig = px.scatter_map(
-            df_frame,
-            lat="Latitude (deg)",
-            lon="Longitude (deg)", 
-            hover_name="Target Identification",
-            hover_data={
-            "Flight Level (FL)": True,
-            "Time (s since midnight)": True,
-            },
-            color="Flight Level (FL)",
-            range_color=[0, 1000], # Add range for Flight Level coloring
-            size_max=12,
-            center=center,
-            zoom=zoom,
-            height=700,
-        )
-        fig.update_layout(mapbox_style="open-street-map")
-        # fig.update_traces(marker=dict(size=10, color="red"))
-        fig.update_layout(margin={"r": 0, "t": 0, "l": 0, "b": 0})
+        fig["layout"]["updatemenus"][0]["buttons"][0]["args"][1] = {
+            "frame": {"duration": duration, "redraw": True},
+            "transition": {"duration": 0, "easing": "linear"},
+        }
         return fig
-
-    @dash_app.callback(
-        Output("speed-display", "children"),
-        Input("store-interval", "data"),
-    )
-    def show_speed(store):
-        interval_ms = store.get("interval_ms", 1000)
-        fps = 1000 / interval_ms
-        return f"Speed: {fps:.1f} frames/second"
 
     return dash_app
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--data", default=DEFAULT_DATA, help="Path to astix file")
-    parser.add_argument(
-        "--no-parallel", action="store_true", help="Disable parallel decoding"
-    )
-    parser.add_argument("--max-messages", type=int, default=None)
-    args = parser.parse_args()
+# Load data and create app instance
+df = load_messages(DEFAULT_DATA, max_messages=100000)
+dash_app = build_app(df)
 
-    data_file = Path(args.data)
-    if not data_file.exists():
-        raise SystemExit(f"Data file not found: {data_file}")
-
-    df = load_messages(
-        str(data_file), parallel=not args.no_parallel, max_messages=args.max_messages
-    )
-    dash_app = build_app(df)
-
-    # Wrap WSGI server as ASGI so uv/uvicorn can serve it using `uv run dash:app`
-    asgi_app = WsgiToAsgi(dash_app.server)
-
-    # Expose the ASGI app as `app` variable for the runner to import
-    global app
-    app = asgi_app
+# Expose the ASGI app for servers like uvicorn
+app = WsgiToAsgi(dash_app.server)
 
 
 if __name__ == "__main__":
-    # If executed directly, start dash using Flask development server for convenience
-    df = load_messages(DEFAULT_DATA, max_messages=100000)
-    dash_app = build_app(df)
-    dash_app.run(debug=True, port=8050)
+    # If executed directly, start dash using Flask development server for convenience.
+    # use_reloader=False prevents the script from running twice on startup.
+    dash_app.run(debug=True, port=8050, use_reloader=False)
