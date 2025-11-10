@@ -1,34 +1,26 @@
-"""Dash dashboard for visualizing ASTERIX messages on a map.
+"""DearPyGui dashboard for visualizing ASTERIX messages on a map.
 
-Run with an ASGI runner (the user's environment uses `uv run`):
+Run with:
 
-    uv run dash:app
+    python dashboard.py
 
-This file exposes an ASGI `app` object so it can be served by uv/uvicorn.
+This file creates a DearPyGui window to display aircraft positions on an
+interactive map, with play/pause and speed controls.
 
 The dashboard loads ASTERIX data using `decoder.Decoder().load()` (see
-`decoder/__main__.py` for example usage). It displays aircraft positions on an
-interactive map, with play/pause and speed controls.
+`decoder/__main__.py` for example usage).
 """
 
-from pathlib import Path
-import argparse
-import json
-from collections import defaultdict
+import time
 
-import pandas as pd
-from dash import Dash, dcc, html, Input, Output, State, callback_context, no_update
-import plotly.express as px
-import plotly.graph_objects as go
+import dearpygui.dearpygui as dpg
 import numpy as np
+import pandas as pd
 from tqdm import tqdm
-
-from asgiref.wsgi import WsgiToAsgi
 
 from decoder.decoder import Decoder
 from decoder.geoutils import CoordinatesWGS84
 from mapdata import *
-
 
 DEFAULT_DATA = "Test_Data/datos_asterix_combinado.ast"
 
@@ -54,15 +46,13 @@ def generate_per_frame_df(df: pd.DataFrame):
         # Use numpy.interp which performs linear interpolation in x (time).
         t_known = t[mask_known]
         h_known = h[mask_known]
-        # np.interp will fill values outside known xp with edge values (good for endpoint filling).
+        # np.interp will fill values outside known xp with edge values (desired behavior)
         h_interp = np.interp(t, t_known, h_known)
         g["Height (m)"] = h_interp
         return g
 
     # Apply per-aircraft interpolation using time as the independent variable
-    df = df.groupby("Target Identification", group_keys=False).apply(
-        _time_weight_interp
-    )
+    df = df.groupby("Target Identification", group_keys=False).apply(_time_weight_interp)
 
     after_missing_count = df["Height (m)"].isna().sum()
     print("Missing Height (m) after :", after_missing_count)
@@ -183,150 +173,160 @@ def load_messages(data_file: str, parallel: bool = True, max_messages=None):
     return df
 
 
-def build_app(df: pd.DataFrame):
-    """Construct the Dash app given a prepared dataframe of points.
-
-    The returned ASGI app is wrapped outside this function.
-    """
-    print("Building Dash app...")
-    dash_app = Dash(__name__)
-
-    per_frame_df = generate_per_frame_df(df)
-    per_frame_df = per_frame_df.dropna(subset=["Latitude (deg)", "Longitude (deg)"])
-    print("Creating figure...")
-    lat_max = 41.7
-    lat_min = 40.9
-    lon_max = 2.6
-    lon_min = 1.5
-    lat_lon_ratio = (lat_max - lat_min) / (lon_max - lon_min)
-    # Create static traces for map features
-    static_traces = [
-        go.Scatter(
-            x=coast_data[0],
-            y=coast_data[1],
-            mode="lines",
-            line=dict(color="black", width=1),
-            name="Coastline",
-            showlegend=False,
-        ),
-        go.Scatter(
-            x=runway_L_data[0],
-            y=runway_L_data[1],
-            mode="lines",
-            line=dict(color="red", width=4),
-            name="Runway L",
-        ),
-        go.Scatter(
-            x=runway_R_data[0],
-            y=runway_R_data[1],
-            mode="lines",
-            line=dict(color="blue", width=4),
-            name="Runway R",
-        ),
-        go.Scatter(
-            x=runway_diag_data[0],
-            y=runway_diag_data[1],
-            mode="lines",
-            line=dict(color="green", width=4),
-            name="Runway Diagonal",
-        ),
-    ]
-
-    if not per_frame_df.empty:
-        # Create animated scatter plot for aircraft
-        fig = px.scatter(
-            per_frame_df,
-            x="Longitude (deg)",
-            y="Latitude (deg)",
-            animation_frame="frame",
-            animation_group="Target Identification",
-            hover_name="Target Identification",
-            hover_data={
-                "Height (m)": True,
-                "Time (s since midnight)": True,
-            },
-            color="Target Identification",
-            range_x=[lon_min, lon_max],
-            range_y=[lat_min, lat_max],
-            height=800,
-            width=int(800 / lat_lon_ratio),
+class Dashboard:
+    def __init__(self, df: pd.DataFrame):
+        self.per_frame_df = generate_per_frame_df(df)
+        self.per_frame_df = self.per_frame_df.dropna(
+            subset=["Latitude (deg)", "Longitude (deg)"]
         )
 
-        # Add static traces to each frame of the animation
-        for frame in fig.frames:
-            frame.data += tuple(static_traces)
+        self.all_aircraft_ids = self.per_frame_df["Target Identification"].unique()
+        self.aircraft_series = {}
 
-        # Add static traces to the base figure
-        fig.add_traces(static_traces)
+        self.current_frame = 0
+        self.min_frame = 0
+        self.max_frame = 0
+        if not self.per_frame_df.empty:
+            self.min_frame = int(self.per_frame_df["frame"].min())
+            self.max_frame = int(self.per_frame_df["frame"].max())
+            self.current_frame = self.min_frame
 
-    else:
-        # If there's no data, create a static map
-        fig = go.Figure(
-            data=static_traces,
-            layout=go.Layout(
-                xaxis=dict(range=[lon_min, lon_max]),
-                yaxis=dict(range=[lat_min, lat_max]),
-                height=800,
-                width=int(800 / lat_lon_ratio),
-            ),
+        self.is_playing = True
+        self.playback_speed = 10.0
+        self.last_update_time = 0
+
+    def _play_callback(self):
+        self.is_playing = True
+
+    def _pause_callback(self):
+        self.is_playing = False
+
+    def _speed_callback(self, sender, app_data):
+        self.playback_speed = app_data
+
+    def _frame_slider_callback(self, sender, app_data):
+        self.current_frame = app_data
+        self._update_plot()
+
+    def _update_plot(self):
+        frame_data = self.per_frame_df[self.per_frame_df["frame"] == self.current_frame]
+
+        aircraft_in_frame = set()
+        for _, row in frame_data.iterrows():
+            aid = row["Target Identification"]
+            lon = [row["Longitude (deg)"]]
+            lat = [row["Latitude (deg)"]]
+            if aid in self.aircraft_series:
+                dpg.set_value(self.aircraft_series[aid], (lon, lat))
+                aircraft_in_frame.add(aid)
+
+        for aid in self.all_aircraft_ids:
+            if aid not in aircraft_in_frame and aid in self.aircraft_series:
+                dpg.set_value(self.aircraft_series[aid], ([], []))
+
+    def run(self):
+        dpg.create_context()
+
+        lat_max = 41.7
+        lat_min = 40.9
+        lon_max = 2.6
+        lon_min = 1.5
+        lat_lon_ratio = (lat_max - lat_min) / (lon_max - lon_min)
+        plot_width = 1000
+        plot_height = int(plot_width * lat_lon_ratio)
+
+        with dpg.window(tag="Primary Window"):
+            with dpg.group(horizontal=True):
+                dpg.add_button(label="Play", callback=self._play_callback)
+                dpg.add_button(label="Pause", callback=self._pause_callback)
+                dpg.add_slider_float(
+                    label="Speed (fps)",
+                    min_value=1.0,
+                    max_value=60.0,
+                    default_value=self.playback_speed,
+                    callback=self._speed_callback,
+                )
+
+            dpg.add_slider_int(
+                label="Frame",
+                tag="frame_slider",
+                min_value=self.min_frame,
+                max_value=self.max_frame,
+                callback=self._frame_slider_callback,
+            )
+
+            with dpg.plot(
+                label="Aircraft Map",
+                height=plot_height,
+                width=plot_width,
+                tag="map_plot",
+            ):
+                dpg.add_plot_legend()
+
+                # Setup axes first
+                dpg.add_plot_axis(dpg.mvXAxis, label="Longitude (deg)", tag="x_axis")
+                dpg.add_plot_axis(dpg.mvYAxis, label="Latitude (deg)", tag="y_axis")
+                dpg.set_axis_limits("x_axis", lon_min, lon_max)
+                dpg.set_axis_limits("y_axis", lat_min, lat_max)
+
+                # Add static map features
+                dpg.add_line_series(
+                    coast_data[0].tolist(), coast_data[1].tolist(), label="Coastline", parent="y_axis"
+                )
+                dpg.add_line_series(
+                    runway_L_data[0].tolist(),
+                    runway_L_data[1].tolist(),
+                    label="Runway L",
+                    parent="y_axis",
+                )
+                dpg.add_line_series(
+                    runway_R_data[0].tolist(),
+                    runway_R_data[1].tolist(),
+                    label="Runway R",
+                    parent="y_axis",
+                )
+                dpg.add_line_series(
+                    runway_diag_data[0].tolist(),
+                    runway_diag_data[1].tolist(),
+                    label="Runway Diagonal",
+                    parent="y_axis",
+                )
+
+                # Create scatter series for each aircraft
+                for aid in self.all_aircraft_ids:
+                    self.aircraft_series[aid] = dpg.add_scatter_series(
+                        x=[], y=[], label=aid, parent="y_axis"
+                    )
+
+        dpg.create_viewport(
+            title="ASTERIX Aircraft Playback",
+            width=plot_width + 40,
+            height=plot_height + 120,
         )
+        dpg.setup_dearpygui()
+        dpg.show_viewport()
 
-    fig.update_layout(margin={"r": 0, "t": 0, "l": 0, "b": 0})
-    print("Configuring animation...")
-    dash_app.layout = html.Div(
-        [
-            html.H3("ASTERIX Aircraft Playback"),
-            html.Div(
-                [
-                    html.Label("Playback Speed (frames/sec):"),
-                    dcc.Slider(
-                        id="speed-slider",
-                        min=1,
-                        max=60,
-                        step=1,
-                        value=10,
-                        marks={i: str(i) for i in range(0, 60, 5)},
-                    ),
-                ],
-                style={"width": "50%", "margin-bottom": "20px"},
-            ),
-            dcc.Graph(id="map", figure=fig, style={"height": "80vh"}),
-        ],
-        style={"margin": "12px", "fontFamily": "Arial, sans-serif"},
-    )
+        self._update_plot()
+        self.last_update_time = time.time()
 
-    @dash_app.callback(
-        Output("map", "figure"),
-        Input("speed-slider", "value"),
-        State("map", "figure"),
-        prevent_initial_call=True,
-    )
-    def update_animation_speed(speed, fig):
-        if not fig or not speed:
-            return no_update
-        if speed <= 1:
-            speed = 1
+        while dpg.is_dearpygui_running():
+            if self.is_playing:
+                time_per_frame = 1.0 / self.playback_speed
+                now = time.time()
+                if now - self.last_update_time >= time_per_frame:
+                    self.current_frame += 1
+                    if self.current_frame > self.max_frame:
+                        self.current_frame = self.min_frame
+                    dpg.set_value("frame_slider", self.current_frame)
+                    self._update_plot()
+                    self.last_update_time = now
 
-        duration = 1000 / speed
+            dpg.render_dearpygui_frame()
 
-        fig["layout"]["updatemenus"][0]["buttons"][0]["args"][1] = {
-            "frame": {"duration": duration, "redraw": True},
-            "transition": {"duration": 0, "easing": "linear"},
-        }
-        return fig
-
-    return dash_app
-
-
-# Load data and create app instance
-df = load_messages(DEFAULT_DATA, max_messages=100000)
-dash_app = build_app(df)
-
-# Expose the ASGI app for servers like uvicorn
-app = WsgiToAsgi(dash_app.server)
+        dpg.destroy_context()
 
 
 if __name__ == "__main__":
-    # If executed directly, start dash using Flask development server for convenience.
-    # use_reloader=False prevents the script from running twice on startup.
-    dash_app.run(debug=True, port=8050, use_reloader=False)
+    df = load_messages(DEFAULT_DATA, max_messages=100000)
+    dashboard = Dashboard(df)
+    dashboard.run()
