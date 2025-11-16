@@ -259,13 +259,12 @@ class Dashboard:
                     height=-1,
                     width=-1,
                     tag="map_plot",
-                    equal_aspects=True,
                 ):
                     dpg.add_plot_legend()
 
                     # Setup axes first
-                    dpg.add_plot_axis(dpg.mvXAxis, label="Longitude (deg)", tag="x_axis", lock_min=True, lock_max=True)
-                    dpg.add_plot_axis(dpg.mvYAxis, label="Latitude (deg)", tag="y_axis", lock_min=True, lock_max=True)
+                    dpg.add_plot_axis(dpg.mvXAxis, label="Longitude (deg)", tag="x_axis")
+                    dpg.add_plot_axis(dpg.mvYAxis, label="Latitude (deg)", tag="y_axis")
                     dpg.set_axis_limits("x_axis", lon_min, lon_max)
                     dpg.set_axis_limits("y_axis", lat_min, lat_max)
 
