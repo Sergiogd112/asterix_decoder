@@ -337,6 +337,32 @@ class Dashboard:
             if aid not in aircraft_in_frame and aid in self.aircraft_series:
                 dpg.set_value(self.aircraft_series[aid], ([], []))
 
+    def _mouse_wheel_callback(self, sender, app_data):
+        """Callback for mouse wheel events for zooming."""
+        if dpg.is_item_hovered("map_plot"):
+            # Get mouse position in plot coordinates
+            mouse_pos = dpg.get_plot_mouse_pos()
+            mx, my = mouse_pos[0], mouse_pos[1]
+
+            # Get current axis limits
+            x_min, x_max = dpg.get_axis_limits("x_axis")
+            y_min, y_max = dpg.get_axis_limits("y_axis")
+
+            # Zoom factor
+            zoom_factor = 1.1
+            if app_data < 0:
+                zoom_factor = 1 / 1.1
+
+            # New limits
+            new_x_min = mx - (mx - x_min) * zoom_factor
+            new_x_max = mx + (x_max - mx) * zoom_factor
+            new_y_min = my - (my - y_min) * zoom_factor
+            new_y_max = my + (y_max - my) * zoom_factor
+
+            # Set new axis limits
+            dpg.set_axis_limits("x_axis", new_x_min, new_x_max)
+            dpg.set_axis_limits("y_axis", new_y_min, new_y_max)
+
     def run(self):
         dpg.create_context()
 
@@ -430,6 +456,9 @@ class Dashboard:
         dpg.setup_dearpygui()
         dpg.show_viewport()
         dpg.set_primary_window("Primary Window", True)
+
+        with dpg.handler_registry():
+            dpg.add_mouse_wheel_handler(callback=self._mouse_wheel_callback)
 
 
         self._apply_filters()
