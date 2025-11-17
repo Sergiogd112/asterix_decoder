@@ -222,6 +222,74 @@ def load_messages(data_file: str, parallel: bool = True, max_messages=None):
     return df
 
 
+class LoadingScreen:
+    def __init__(self, main_controller):
+        self.main_controller = main_controller
+        self.data_file = DEFAULT_DATA
+        self.max_messages = 100000
+        self.load_all = False
+
+    def _file_dialog_callback(self, sender, app_data):
+        self.data_file = app_data['file_path_name']
+        dpg.set_value("data_file_text", self.data_file)
+
+    def _load_callback(self):
+        max_messages = None if self.load_all else self.max_messages
+        
+        dpg.configure_item("load_button", show=False)
+        dpg.configure_item("loading_text", show=True)
+
+        df = load_messages(self.data_file, max_messages=max_messages)
+        
+        dashboard = Dashboard(df)
+        self.main_controller.set_dashboard(dashboard)
+        dashboard.create_ui()
+        
+        dpg.delete_item("Loading Window")
+        dpg.set_primary_window("Primary Window", True)
+
+    def _toggle_load_all(self, sender, app_data):
+        self.load_all = app_data
+        dpg.configure_item("max_messages_input", enabled=not self.load_all)
+
+    def create_ui(self):
+        with dpg.file_dialog(
+            directory_selector=False,
+            show=False,
+            callback=self._file_dialog_callback,
+            tag="file_dialog_id",
+            width=700,
+            height=400,
+        ):
+            dpg.add_file_extension(".*")
+            dpg.add_file_extension(".ast")
+
+        with dpg.window(label="Loading", tag="Loading Window", width=400, height=200):
+            dpg.add_text("Select ASTERIX data file:")
+            with dpg.group(horizontal=True):
+                dpg.add_text(self.data_file, tag="data_file_text")
+                dpg.add_button(label="Select File", callback=lambda: dpg.show_item("file_dialog_id"))
+
+            dpg.add_spacer()
+
+            dpg.add_input_int(
+                label="Max Messages",
+                default_value=self.max_messages,
+                callback=lambda s, a: setattr(self, 'max_messages', a),
+                tag="max_messages_input"
+            )
+            dpg.add_checkbox(
+                label="Load All",
+                callback=self._toggle_load_all,
+                tag="load_all_checkbox"
+            )
+
+            dpg.add_spacer()
+            
+            dpg.add_button(label="Load and Run", callback=self._load_callback, tag="load_button")
+            dpg.add_text("Loading...", show=False, tag="loading_text")
+
+
 class Dashboard:
     def __init__(self, df: pd.DataFrame):
         self.per_frame_df = generate_per_frame_df(df)
@@ -363,9 +431,7 @@ class Dashboard:
             dpg.set_axis_limits("x_axis", new_x_min, new_x_max)
             dpg.set_axis_limits("y_axis", new_y_min, new_y_max)
 
-    def run(self):
-        dpg.create_context()
-
+    def create_ui(self):
         with dpg.window(tag="Primary Window"):
             with dpg.group(horizontal=True):
                 dpg.add_button(label="Play", callback=self._play_callback)
@@ -448,59 +514,49 @@ class Dashboard:
         with dpg.window(tag="custom_tooltip", show=False, no_title_bar=True, no_resize=True, no_move=True, autosize=True):
             dpg.add_text("", tag="tooltip_text")
 
-        dpg.create_viewport(
-            title="ASTERIX Aircraft Playback",
-            width=1200,
-            resizable=True,
-        )
-        dpg.setup_dearpygui()
-        dpg.show_viewport()
-        dpg.set_primary_window("Primary Window", True)
-
         with dpg.handler_registry():
             dpg.add_mouse_wheel_handler(callback=self._mouse_wheel_callback)
-
 
         self._apply_filters()
         self._update_plot()
         self.last_update_time = time.time()
 
-        while dpg.is_dearpygui_running():
-            # Animation logic
-            if self.is_playing:
-                time_per_frame = 1.0 / self.playback_speed
-                now = time.time()
-                if now - self.last_update_time >= time_per_frame:
-                    self.current_frame += 1
-                    if self.current_frame > self.max_frame:
-                        self.current_frame = self.min_frame
-                    dpg.set_value("frame_slider", self.current_frame)
-                    self._update_plot()
-                    self.last_update_time = now
+    def update(self):
+        # Animation logic
+        if self.is_playing:
+            time_per_frame = 1.0 / self.playback_speed
+            now = time.time()
+            if now - self.last_update_time >= time_per_frame:
+                self.current_frame += 1
+                if self.current_frame > self.max_frame:
+                    self.current_frame = self.min_frame
+                dpg.set_value("frame_slider", self.current_frame)
+                self._update_plot()
+                self.last_update_time = now
 
-            # Hover and click logic
-            frame_data = self.filtered_per_frame_df[self.filtered_per_frame_df["frame"] == self.current_frame]
+        # Hover and click logic
+        frame_data = self.filtered_per_frame_df[self.filtered_per_frame_df["frame"] == self.current_frame]
+        
+        closest_aircraft = None
+        is_hovering_plot = dpg.is_item_hovered("map_plot")
+
+        if is_hovering_plot:
+            mouse_pos = dpg.get_plot_mouse_pos()
+            mx, my = mouse_pos[0], mouse_pos[1]
+
+            plot_limits_x = dpg.get_axis_limits("x_axis")
+            plot_width_units = plot_limits_x[1] - plot_limits_x[0]
+            threshold = plot_width_units / 100 
+            threshold_sq = threshold * threshold
             
-            closest_aircraft = None
-            is_hovering_plot = dpg.is_item_hovered("map_plot")
-
-            if is_hovering_plot:
-                mouse_pos = dpg.get_plot_mouse_pos()
-                mx, my = mouse_pos[0], mouse_pos[1]
-
-                plot_limits_x = dpg.get_axis_limits("x_axis")
-                plot_width_units = plot_limits_x[1] - plot_limits_x[0]
-                threshold = plot_width_units / 100 
-                threshold_sq = threshold * threshold
-                
-                min_dist_sq = float('inf')
-                
-                for _, row in frame_data.iterrows():
-                    px, py = row["Longitude (deg)"], row["Latitude (deg)"]
-                    dist_sq = (mx - px)**2 + (my - py)**2
-                    if dist_sq < min_dist_sq:
-                        min_dist_sq = dist_sq
-                        closest_aircraft = row
+            min_dist_sq = float('inf')
+            
+            for _, row in frame_data.iterrows():
+                px, py = row["Longitude (deg)"], row["Latitude (deg)"]
+                dist_sq = (mx - px)**2 + (my - py)**2
+                if dist_sq < min_dist_sq:
+                    min_dist_sq = dist_sq
+                    closest_aircraft = row
 
                 if closest_aircraft is not None and min_dist_sq < threshold_sq:
                     info = (
@@ -528,30 +584,53 @@ class Dashboard:
                 else:
                     dpg.configure_item("custom_tooltip", show=False)
                     closest_aircraft = None # Reset if not close enough
+        else:
+            dpg.configure_item("custom_tooltip", show=False)
+
+        if dpg.is_item_clicked("map_plot") and closest_aircraft is not None:
+            self.clicked_aircraft_id = closest_aircraft['Target Identification']
+
+        if self.clicked_aircraft_id:
+            clicked_aircraft_data = frame_data[frame_data["Target Identification"] == self.clicked_aircraft_id]
+            if not clicked_aircraft_data.empty:
+                dpg.set_value("clicked_id", f"ID: {clicked_aircraft_data.iloc[0]['Target Identification']}")
+                dpg.set_value("clicked_height", f"Height: {clicked_aircraft_data.iloc[0]['Height (m)']:.2f} m")
+                dpg.set_value("clicked_time", f"Time: {clicked_aircraft_data.iloc[0]['Time (s since midnight)']} s")
             else:
-                dpg.configure_item("custom_tooltip", show=False)
-
-            if dpg.is_item_clicked("map_plot") and closest_aircraft is not None:
-                self.clicked_aircraft_id = closest_aircraft['Target Identification']
-
-            if self.clicked_aircraft_id:
-                clicked_aircraft_data = frame_data[frame_data["Target Identification"] == self.clicked_aircraft_id]
-                if not clicked_aircraft_data.empty:
-                    dpg.set_value("clicked_id", f"ID: {clicked_aircraft_data.iloc[0]['Target Identification']}")
-                    dpg.set_value("clicked_height", f"Height: {clicked_aircraft_data.iloc[0]['Height (m)']:.2f} m")
-                    dpg.set_value("clicked_time", f"Time: {clicked_aircraft_data.iloc[0]['Time (s since midnight)']} s")
-                else:
-                    dpg.set_value("clicked_id", f"ID: {self.clicked_aircraft_id} (out of frame)")
-                    dpg.set_value("clicked_height", "Height: N/A")
-                    dpg.set_value("clicked_time", "Time: N/A")
+                dpg.set_value("clicked_id", f"ID: {self.clicked_aircraft_id} (out of frame)")
+                dpg.set_value("clicked_height", "Height: N/A")
+                dpg.set_value("clicked_time", "Time: N/A")
 
 
+class MainController:
+    def __init__(self):
+        self.dashboard = None
+
+    def set_dashboard(self, dashboard):
+        self.dashboard = dashboard
+
+    def run(self):
+        dpg.create_context()
+        
+        loading_screen = LoadingScreen(self)
+        loading_screen.create_ui()
+
+        dpg.create_viewport(
+            title="ASTERIX Aircraft Playback",
+            width=1200,
+            resizable=True,
+        )
+        dpg.setup_dearpygui()
+        dpg.show_viewport()
+
+        while dpg.is_dearpygui_running():
+            if self.dashboard:
+                self.dashboard.update()
             dpg.render_dearpygui_frame()
 
         dpg.destroy_context()
 
 
 if __name__ == "__main__":
-    df = load_messages(DEFAULT_DATA, max_messages=100000)
-    dashboard = Dashboard(df)
-    dashboard.run()
+    main_controller = MainController()
+    main_controller.run()
