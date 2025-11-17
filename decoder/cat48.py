@@ -313,7 +313,7 @@ def decode_BDS_5_0(data, pos):
         "Status Track Angle": bool(status_track),
         "Track Angle": track_angle,
         "Status Ground Speed": bool(status_gs),
-        "Ground Speed": gs,
+        "Ground Speed (kts)": gs,
         "Status Track Angle Rate": bool(status_ta_rate),
         "Track Angle Rate": ta_rate,
         "Status TAS": bool(status_tas),
@@ -337,9 +337,9 @@ def decode_BDS_6_0(data, pos):
     inert_vv = data[pos + 46 : pos + 56].int * 32.0
     bds_6_0 = {
         "Status Magnetic Heading": bool(status_mag_h),
-        "Magnetic Heading": mag_h,
+        "Magnetic Heading (deg)": mag_h,
         "Status IAS": bool(status_ias),
-        "IAS": ias,
+        "IAS (kt)": ias,
         "Status Mach": bool(status_mach),
         "Mach": mach,
         "Status Barometric Altitude Rate": bool(status_bar_rate),
@@ -429,8 +429,8 @@ def decode_calc_track_vel_polar(data, pos):
     groundspeed = data[pos : pos + 16].uint * 0.22
     heading = data[pos + 16 : pos + 32].uint * (360.0 / (2**16))
     return {
-        "GS(kt)": groundspeed,
-        "HDG(deg)": heading,
+        "Ground Speed (kts)": groundspeed,
+        "Magnetic Heading (deg)": heading,
     }, 32
 
 
@@ -559,7 +559,7 @@ def decode_com_acas_cap_fl_st(data, pos):
             "Not assigned",
             "Not assigned",
         ][comm_cap_idx],
-        "STAT": [
+        "STAT (CAT48)": [
             "No alert, no SPI, airborne",
             "No alert, no SPI, on ground",
             "Alert, no SPI, airborne",

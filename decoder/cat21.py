@@ -153,6 +153,87 @@ def decode_flight_level(data: bitstring.BitArray):
         "Height (m)": flight_level_corrected * 30.48
     }, 16
 
+def decode_air_speed(data: bitstring.BitArray):
+    if len(data) < 16: raise ValueError("Datos insuficientes para Air Speed.")
+    
+    # bits 0-1: IM (IAS/Mach)
+    im = data[0:2].uint
+    
+    # bits 2-15: Air Speed
+    air_speed_raw = data[2:16].uint
+    
+    decoded = {}
+    if im == 0: # IAS
+        # LSB = 1 kt
+        decoded["IAS (kt)"] = air_speed_raw * 1
+    elif im == 1: # Mach
+        # LSB = 0.001 Mach
+        decoded["Mach"] = air_speed_raw * 0.001
+    # If im is 2 or 3, it's not valid according to CAT21, so we don't decode.
+    
+    return decoded, 16
+
+def decode_magnetic_heading(data: bitstring.BitArray):
+    if len(data) < 16: raise ValueError("Datos insuficientes para Magnetic Heading.")
+    
+    # LSB = 360 / 2^16 deg
+    heading_raw = data[0:16].uint
+    heading = heading_raw * (360 / 2**16)
+    
+    return {"Magnetic Heading (deg)": heading}, 16
+
+def decode_target_status(data: bitstring.BitArray):
+    if len(data) < 8: raise ValueError("Datos insuficientes para Target Status.")
+    
+    val = data[0:8].uint
+    
+    # bits 0-1: VFI (Valid/Invalid)
+    vfi = (val >> 6) & 0b11
+    vfi_map = {0: "Valid", 1: "Invalid", 2: "Reserved", 3: "Reserved"}
+    
+    # bits 2-3: RAB (Reported by ADS-B or RBM)
+    rab = (val >> 4) & 0b11
+    rab_map = {0: "Reported by ADS-B", 1: "Reported by RBM", 2: "Reserved", 3: "Reserved"}
+    
+    # bits 4-5: GBS (Ground Bit Status)
+    gbs = (val >> 2) & 0b11
+    gbs_map = {0: "No ground bit", 1: "Ground bit set", 2: "Reserved", 3: "Reserved"}
+    
+    # bits 6-7: NRM (Navigation Integrity)
+    nrm = val & 0b11
+    nrm_map = {0: "Normal", 1: "Degraded", 2: "Reserved", 3: "Reserved"}
+    
+    decoded = {
+        "Target Status VFI": vfi_map.get(vfi, "Unknown"),
+        "Target Status RAB": rab_map.get(rab, "Unknown"),
+        "Target Status GBS": gbs_map.get(gbs, "Unknown"),
+        "Target Status NRM": nrm_map.get(nrm, "Unknown"),
+    }
+    
+    return decoded, 8
+
+def decode_airborne_ground_vector(data: bitstring.BitArray):
+    if len(data) < 32: raise ValueError("Datos insuficientes para Airborne Ground Vector.")
+
+    # bits 0-15: Ground Speed
+    ground_speed_raw = data[0:16].uint
+    # LSB = 2^-14 NM/s = 1/256 kt (approx)
+    # 1 NM/s = 3600 NM/h = 3600 kt
+    # So, LSB = (2^-14) * 3600 kt = 0.2197 kt
+    # A more common LSB for ground speed is 1/256 NM/s, which is 1/256 * 1852 m/s = 7.23 m/s
+    # Let's assume LSB = 1/256 NM/s, and convert to knots
+    ground_speed_kts = ground_speed_raw * (2**-14) * 3600 # Convert NM/s to knots
+    
+    # bits 16-31: Track Angle
+    track_angle_raw = data[16:32].uint
+    # LSB = 360 / 2^16 deg
+    track_angle = track_angle_raw * (360 / 2**16)
+    
+    return {
+        "Ground Speed (kts)": ground_speed_kts,
+        "Track Angle (deg)": track_angle
+    }, 32
+
 def decode_target_identification(data: bitstring.BitArray):
     if len(data) < 48: raise ValueError("Datos insuficientes para Target Identification.")
     chars = ""
@@ -181,7 +262,7 @@ UAP_MAP = {
     7: ('Position in WGS-84 Co-ordinates High Resolution', '8', decode_wgs84_coords_high_res),
     # -- FX Bit --
     8: ('Time of Applicability for Velocity', '3', skip_field(3)),
-    9: ('Air Speed', '2', skip_field(2)),
+    9: ('Air Speed', '2', decode_air_speed),
     10: ('True Air Speed', '2', skip_field(2)),
     11: ('Target Address', '3', decode_target_address),
     12: ('Time of Message Reception of Position', '3', decode_time_of_reception_position),
@@ -196,11 +277,11 @@ UAP_MAP = {
     20: ('Roll Angle', '2', skip_field(2)),
     21: ('Flight Level', '2', decode_flight_level),
     # -- FX Bit --
-    22: ('Magnetic Heading', '2', skip_field(2)),
-    23: ('Target Status', '1', skip_field(1)),
+    22: ('Magnetic Heading', '2', decode_magnetic_heading),
+    23: ('Target Status', '1', decode_target_status),
     24: ('Barometric Vertical Rate', '2', skip_field(2)),
     25: ('Geometric Vertical Rate', '2', skip_field(2)),
-    26: ('Airborne Ground Vector', '4', skip_field(4)),
+    26: ('Airborne Ground Vector', '4', decode_airborne_ground_vector),
     27: ('Track Angle Rate', '2', skip_field(2)),
     28: ('Time of Report Transmission', '3', skip_field(3)),
     # -- FX Bit --

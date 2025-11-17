@@ -24,6 +24,36 @@ from mapdata import *
 
 DEFAULT_DATA = "Test_Data/datos_asterix_combinado.ast"
 
+ALL_EXPECTED_COLUMNS = [
+    "Category",
+    "SAC",
+    "SIC",
+    "ATP Description",
+    "ARC Description",
+    "RC Description",
+    "RAB Description",
+    "GBS",
+    "Latitude (deg)",
+    "Longitude (deg)",
+    "ICAO Address (hex)",
+    "Time (s since midnight)",
+    "UTC Time (HH:MM:SS)",
+    "Mode-3/A Code",
+    "Flight Level (FL)",
+    "Altitude (ft)",
+    "Height (m)",
+    "Target Identification",
+    "IAS (kt)",
+    "Mach",
+    "Magnetic Heading (deg)",
+    "Target Status VFI",
+    "Target Status RAB",
+    "Target Status GBS",
+    "Target Status NRM",
+    "Ground Speed (kts)",
+    "Track Angle (deg)",
+    "STAT (CAT48)",
+]
 
 def generate_per_frame_df(df: pd.DataFrame):
     before_missing_count = df["Height (m)"].isna().sum()
@@ -68,7 +98,16 @@ def generate_per_frame_df(df: pd.DataFrame):
 
         # Aggregate existing known values per frame (mean if multiple records per frame)
         agg = g.groupby("frame").agg(
-            {"Latitude (deg)": "mean", "Longitude (deg)": "mean", "Height (m)": "mean"}
+            {
+                "Latitude (deg)": "mean",
+                "Longitude (deg)": "mean",
+                "Height (m)": "mean",
+                "IAS (kt)": "first",
+                "Magnetic Heading (deg)": "first",
+                "Ground Speed (kts)": "first",
+                "Target Status GBS": "first",
+                "STAT (CAT48)": "first",
+            }
         )
         # Reindex to include all frames in the span
         agg = agg.reindex(frames_all)
@@ -117,6 +156,11 @@ def generate_per_frame_df(df: pd.DataFrame):
                     "Latitude (deg)",
                     "Longitude (deg)",
                     "Height (m)",
+                    "IAS (kt)",
+                    "Magnetic Heading (deg)",
+                    "Ground Speed (kts)",
+                    "Target Status GBS",
+                    "STAT (CAT48)",
                 ]
             ]
         )
@@ -134,6 +178,11 @@ def generate_per_frame_df(df: pd.DataFrame):
                 "Latitude (deg)",
                 "Longitude (deg)",
                 "Height (m)",
+                "IAS (kt)",
+                "Magnetic Heading (deg)",
+                "Ground Speed (kts)",
+                "Target Status GBS",
+                "STAT (CAT48)",
             ]
         )
     )
@@ -161,7 +210,7 @@ def load_messages(data_file: str, parallel: bool = True, max_messages=None):
     decoded = decoder.load(
         data_file, parallel, max_messages=max_messages, radar_coords=coords_radar
     )
-    df = pd.DataFrame(decoded)
+    df = pd.DataFrame(decoded).reindex(columns=ALL_EXPECTED_COLUMNS)
     df = df.dropna(subset=["Time (s since midnight)"])
     df = (
         df.assign(frame=df["Time (s since midnight)"].astype(int))
@@ -196,6 +245,67 @@ class Dashboard:
         self.last_update_time = 0
         self.clicked_aircraft_id = None
 
+        # Filter values
+        self.lat_min_filter = 40.9
+        self.lat_max_filter = 41.7
+        self.lon_min_filter = 1.5
+        self.lon_max_filter = 2.6
+        self.height_min_filter = self.per_frame_df["Height (m)"].min()
+        self.height_max_filter = self.per_frame_df["Height (m)"].max()
+        self.gbs_filter = False
+        self.category_filter = "All"
+        self.categories = ["All"] + self.per_frame_df["Category"].unique().tolist()
+
+        self.filtered_per_frame_df = self.per_frame_df.copy()
+    
+    def _apply_filters(self):
+        """Filters the per_frame_df based on the current filter settings."""
+        filtered_df = self.per_frame_df.copy()
+
+        # Apply filters
+        if not filtered_df.empty:
+            filtered_df = filtered_df[
+                (filtered_df["Latitude (deg)"] >= self.lat_min_filter) &
+                (filtered_df["Latitude (deg)"] <= self.lat_max_filter) &
+                (filtered_df["Longitude (deg)"] >= self.lon_min_filter) &
+                (filtered_df["Longitude (deg)"] <= self.lon_max_filter) &
+                (filtered_df["Height (m)"] >= self.height_min_filter) &
+                (filtered_df["Height (m)"] <= self.height_max_filter)
+            ]
+
+            if self.gbs_filter:
+                filtered_df = filtered_df[filtered_df["Target Status GBS"] == "Ground bit set"]
+
+            if self.category_filter != "All":
+                filtered_df = filtered_df[filtered_df["Category"] == self.category_filter]
+
+        self.filtered_per_frame_df = filtered_df
+
+
+    def _filter_callback(self, sender, app_data):
+        """Callback for all filter UI elements."""
+        filter_tag = dpg.get_item_alias(sender)
+        if filter_tag == "lat_min_filter":
+            self.lat_min_filter = app_data
+        elif filter_tag == "lat_max_filter":
+            self.lat_max_filter = app_data
+        elif filter_tag == "lon_min_filter":
+            self.lon_min_filter = app_data
+        elif filter_tag == "lon_max_filter":
+            self.lon_max_filter = app_data
+        elif filter_tag == "height_min_filter":
+            self.height_min_filter = app_data
+        elif filter_tag == "height_max_filter":
+            self.height_max_filter = app_data
+        elif filter_tag == "gbs_filter":
+            self.gbs_filter = app_data
+        elif filter_tag == "category_filter":
+            self.category_filter = app_data
+        
+        self._apply_filters()
+        self._update_plot()
+
+
     def _play_callback(self):
         self.is_playing = True
 
@@ -210,7 +320,9 @@ class Dashboard:
         self._update_plot()
 
     def _update_plot(self):
-        frame_data = self.per_frame_df[self.per_frame_df["frame"] == self.current_frame]
+        if not hasattr(self, 'filtered_per_frame_df'):
+            return
+        frame_data = self.filtered_per_frame_df[self.filtered_per_frame_df["frame"] == self.current_frame]
 
         aircraft_in_frame = set()
         for _, row in frame_data.iterrows():
@@ -227,11 +339,6 @@ class Dashboard:
 
     def run(self):
         dpg.create_context()
-
-        lat_max = 41.7
-        lat_min = 40.9
-        lon_max = 2.6
-        lon_min = 1.5
 
         with dpg.window(tag="Primary Window"):
             with dpg.group(horizontal=True):
@@ -253,61 +360,71 @@ class Dashboard:
                 callback=self._frame_slider_callback,
             )
 
-            with dpg.group(horizontal=True):
-                with dpg.plot(
-                    label="Aircraft Map",
-                    height=-1,
-                    width=-1,
-                    tag="map_plot",
-                ):
-                    dpg.add_plot_legend()
+            with dpg.plot(
+                label="Aircraft Map",
+                height=-1,
+                width=-1,
+                tag="map_plot",
+            ):
+                dpg.add_plot_legend()
 
-                    # Setup axes first
-                    dpg.add_plot_axis(dpg.mvXAxis, label="Longitude (deg)", tag="x_axis")
-                    dpg.add_plot_axis(dpg.mvYAxis, label="Latitude (deg)", tag="y_axis")
-                    dpg.set_axis_limits("x_axis", lon_min, lon_max)
-                    dpg.set_axis_limits("y_axis", lat_min, lat_max)
+                # Setup axes first
+                dpg.add_plot_axis(dpg.mvXAxis, label="Longitude (deg)", tag="x_axis")
+                dpg.add_plot_axis(dpg.mvYAxis, label="Latitude (deg)", tag="y_axis")
+                dpg.set_axis_limits("x_axis", self.lon_min_filter, self.lon_max_filter)
+                dpg.set_axis_limits("y_axis", self.lat_min_filter, self.lat_max_filter)
 
-                    # Add static map features
-                    dpg.add_line_series(
-                        coast_data[0].tolist(), coast_data[1].tolist(), label="Coastline", parent="y_axis"
-                    )
-                    dpg.add_line_series(
-                        runway_L_data[0].tolist(),
-                        runway_L_data[1].tolist(),
-                        label="Runway L",
-                        parent="y_axis",
-                    )
-                    dpg.add_line_series(
-                        runway_R_data[0].tolist(),
-                        runway_R_data[1].tolist(),
-                        label="Runway R",
-                        parent="y_axis",
-                    )
-                    dpg.add_line_series(
-                        runway_diag_data[0].tolist(),
-                        runway_diag_data[1].tolist(),
-                        label="Runway Diagonal",
-                        parent="y_axis",
-                    )
+                # Add static map features
+                dpg.add_line_series(
+                    coast_data[0].tolist(), coast_data[1].tolist(), label="Coastline", parent="y_axis"
+                )
+                dpg.add_line_series(
+                    runway_L_data[0].tolist(),
+                    runway_L_data[1].tolist(),
+                    label="Runway L",
+                    parent="y_axis",
+                )
+                dpg.add_line_series(
+                    runway_R_data[0].tolist(),
+                    runway_R_data[1].tolist(),
+                    label="Runway R",
+                    parent="y_axis",
+                )
+                dpg.add_line_series(
+                    runway_diag_data[0].tolist(),
+                    runway_diag_data[1].tolist(),
+                    label="Runway Diagonal",
+                    parent="y_axis",
+                )
 
-                    # Create scatter series for each aircraft
-                    for aid in self.all_aircraft_ids:
-                        self.aircraft_series[aid] = dpg.add_scatter_series(
-                            x=[], y=[], parent="y_axis"
-                        )
-                
-                with dpg.group():
-                    dpg.add_text("Clicked Aircraft Info:")
-                    dpg.add_text("ID: N/A", tag="clicked_id")
-                    dpg.add_text("Height: N/A", tag="clicked_height")
-                    dpg.add_text("Time: N/A", tag="clicked_time")
+                # Create scatter series for each aircraft
+                for aid in self.all_aircraft_ids:
+                    self.aircraft_series[aid] = dpg.add_scatter_series(
+                        x=[], y=[], parent="y_axis"
+                    )
+        
+        with dpg.window(label="Filters", width=250, height=300, pos=[950, 50]):
+            dpg.add_text("Filters")
+            dpg.add_input_float(label="Min Latitude", tag="lat_min_filter", default_value=self.lat_min_filter, callback=self._filter_callback)
+            dpg.add_input_float(label="Max Latitude", tag="lat_max_filter", default_value=self.lat_max_filter, callback=self._filter_callback)
+            dpg.add_input_float(label="Min Longitude", tag="lon_min_filter", default_value=self.lon_min_filter, callback=self._filter_callback)
+            dpg.add_input_float(label="Max Longitude", tag="lon_max_filter", default_value=self.lon_max_filter, callback=self._filter_callback)
+            dpg.add_input_float(label="Min Height", tag="height_min_filter", default_value=self.height_min_filter, callback=self._filter_callback)
+            dpg.add_input_float(label="Max Height", tag="height_max_filter", default_value=self.height_max_filter, callback=self._filter_callback)
+            dpg.add_checkbox(label="GBS", tag="gbs_filter", default_value=self.gbs_filter, callback=self._filter_callback)
+            dpg.add_combo(label="Category", tag="category_filter", items=self.categories, default_value=self.category_filter, callback=self._filter_callback)
+
+        with dpg.window(label="Clicked Aircraft Info", width=250, height=150, pos=[950, 360]):
+            dpg.add_text("ID: N/A", tag="clicked_id")
+            dpg.add_text("Height: N/A", tag="clicked_height")
+            dpg.add_text("Time: N/A", tag="clicked_time")
 
         with dpg.window(tag="custom_tooltip", show=False, no_title_bar=True, no_resize=True, no_move=True, autosize=True):
             dpg.add_text("", tag="tooltip_text")
 
         dpg.create_viewport(
             title="ASTERIX Aircraft Playback",
+            width=1200,
             resizable=True,
         )
         dpg.setup_dearpygui()
@@ -315,6 +432,7 @@ class Dashboard:
         dpg.set_primary_window("Primary Window", True)
 
 
+        self._apply_filters()
         self._update_plot()
         self.last_update_time = time.time()
 
@@ -332,7 +450,7 @@ class Dashboard:
                     self.last_update_time = now
 
             # Hover and click logic
-            frame_data = self.per_frame_df[self.per_frame_df["frame"] == self.current_frame]
+            frame_data = self.filtered_per_frame_df[self.filtered_per_frame_df["frame"] == self.current_frame]
             
             closest_aircraft = None
             is_hovering_plot = dpg.is_item_hovered("map_plot")
@@ -361,6 +479,17 @@ class Dashboard:
                         f"Height: {closest_aircraft['Height (m)']:.2f} m\n"
                         f"Time: {closest_aircraft['Time (s since midnight)']} s"
                     )
+                    if pd.notna(closest_aircraft.get('IAS (kt)')):
+                        info += f"\nIAS: {closest_aircraft['IAS (kt)']:.2f} kt"
+                    if pd.notna(closest_aircraft.get('Magnetic Heading (deg)')):
+                        info += f"\nHeading: {closest_aircraft['Magnetic Heading (deg)']:.2f} deg"
+                    if pd.notna(closest_aircraft.get('Ground Speed (kts)')):
+                        info += f"\nGS: {closest_aircraft['Ground Speed (kts)']:.2f} kts"
+                    if pd.notna(closest_aircraft.get('Target Status GBS')):
+                        info += f"\nSTAT: {closest_aircraft['Target Status GBS']}"
+                    if pd.notna(closest_aircraft.get('STAT (CAT48)')):
+                        info += f"\nSTAT (CAT48): {closest_aircraft['STAT (CAT48)']}"
+
                     dpg.set_value("tooltip_text", info)
                     
                     # Position and show tooltip
