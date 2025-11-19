@@ -113,6 +113,8 @@ def generate_per_frame_df(df: pd.DataFrame):
         )
         # Reindex to include all frames in the span
         agg = agg.reindex(frames_all)
+        agg["Target Status GBS"] = agg["Target Status GBS"].ffill()
+        agg["STAT (CAT48)"] = agg["STAT (CAT48)"].ffill()
         agg = agg.reset_index()
         # Ensure the frame column exists and is integer
         if "frame" not in agg.columns and "index" in agg.columns:
@@ -183,6 +185,25 @@ def generate_per_frame_df(df: pd.DataFrame):
             ]
         )
     )
+
+    def determine_ground_status(row):
+        if pd.notna(row["STAT (CAT48)"]):
+            stat = row["STAT (CAT48)"]
+            is_ground = "on ground" in stat
+            is_airborne = "airborne" in stat
+            if is_ground and not is_airborne:
+                return "On Ground"
+            if is_airborne and not is_ground:
+                return "Airborne"
+        if pd.notna(row["Target Status GBS"]):
+            if row["Target Status GBS"] == "Ground bit set":
+                return "On Ground"
+            if row["Target Status GBS"] == "No ground bit":
+                return "Airborne"
+        return "Unknown"
+
+    per_frame_df["Ground Status"] = per_frame_df.apply(determine_ground_status, axis=1)
+
     # Sort for convenience
     per_frame_df = per_frame_df.sort_values(
         ["frame", "Target Identification", "Category"]
@@ -322,12 +343,13 @@ class Dashboard:
         self.lon_max_filter = 2.6
         self.height_min_filter = self.per_frame_df["Height (m)"].min()
         self.height_max_filter = self.per_frame_df["Height (m)"].max()
-        self.gbs_filter = False
+        self.ground_status_filter = "All"
         self.category_filter = "All"
         self.categories = ["All"] + self.per_frame_df["Category"].unique().tolist()
+        self.ground_statuses = ["All", "On Ground", "Airborne"]
 
         self.filtered_per_frame_df = self.per_frame_df.copy()
-    
+
     def _apply_filters(self):
         """Filters the per_frame_df based on the current filter settings."""
         filtered_df = self.per_frame_df.copy()
@@ -335,22 +357,25 @@ class Dashboard:
         # Apply filters
         if not filtered_df.empty:
             filtered_df = filtered_df[
-                (filtered_df["Latitude (deg)"] >= self.lat_min_filter) &
-                (filtered_df["Latitude (deg)"] <= self.lat_max_filter) &
-                (filtered_df["Longitude (deg)"] >= self.lon_min_filter) &
-                (filtered_df["Longitude (deg)"] <= self.lon_max_filter) &
-                (filtered_df["Height (m)"] >= self.height_min_filter) &
-                (filtered_df["Height (m)"] <= self.height_max_filter)
+                (filtered_df["Latitude (deg)"] >= self.lat_min_filter)
+                & (filtered_df["Latitude (deg)"] <= self.lat_max_filter)
+                & (filtered_df["Longitude (deg)"] >= self.lon_min_filter)
+                & (filtered_df["Longitude (deg)"] <= self.lon_max_filter)
+                & (filtered_df["Height (m)"] >= self.height_min_filter)
+                & (filtered_df["Height (m)"] <= self.height_max_filter)
             ]
 
-            if self.gbs_filter:
-                filtered_df = filtered_df[filtered_df["Target Status GBS"] == "Ground bit set"]
+            if self.ground_status_filter != "All":
+                filtered_df = filtered_df[
+                    filtered_df["Ground Status"] == self.ground_status_filter
+                ]
 
             if self.category_filter != "All":
-                filtered_df = filtered_df[filtered_df["Category"] == self.category_filter]
+                filtered_df = filtered_df[
+                    filtered_df["Category"].astype(str) == self.category_filter
+                ]
 
         self.filtered_per_frame_df = filtered_df
-
 
     def _filter_callback(self, sender, app_data):
         """Callback for all filter UI elements."""
@@ -367,14 +392,13 @@ class Dashboard:
             self.height_min_filter = app_data
         elif filter_tag == "height_max_filter":
             self.height_max_filter = app_data
-        elif filter_tag == "gbs_filter":
-            self.gbs_filter = app_data
+        elif filter_tag == "ground_status_filter":
+            self.ground_status_filter = app_data
         elif filter_tag == "category_filter":
             self.category_filter = app_data
-        
+
         self._apply_filters()
         self._update_plot()
-
 
     def _play_callback(self):
         self.is_playing = True
@@ -390,9 +414,11 @@ class Dashboard:
         self._update_plot()
 
     def _update_plot(self):
-        if not hasattr(self, 'filtered_per_frame_df'):
+        if not hasattr(self, "filtered_per_frame_df"):
             return
-        frame_data = self.filtered_per_frame_df[self.filtered_per_frame_df["frame"] == self.current_frame]
+        frame_data = self.filtered_per_frame_df[
+            self.filtered_per_frame_df["frame"] == self.current_frame
+        ]
 
         aircraft_in_frame = set()
         for _, row in frame_data.iterrows():
@@ -472,7 +498,10 @@ class Dashboard:
 
                 # Add static map features
                 dpg.add_line_series(
-                    coast_data[0].tolist(), coast_data[1].tolist(), label="Coastline", parent="y_axis"
+                    coast_data[0].tolist(),
+                    coast_data[1].tolist(),
+                    label="Coastline",
+                    parent="y_axis",
                 )
                 dpg.add_line_series(
                     runway_L_data[0].tolist(),
@@ -499,25 +528,76 @@ class Dashboard:
                     self.aircraft_series[key] = dpg.add_scatter_series(
                         x=[], y=[], label=f"{aid}-{cat}", parent="y_axis"
                     )
-        
+
         with dpg.window(label="Filters", width=250, height=300, pos=[950, 50]):
             dpg.add_text("Filters")
-            dpg.add_input_float(label="Min Latitude", tag="lat_min_filter", default_value=self.lat_min_filter, callback=self._filter_callback)
-            dpg.add_input_float(label="Max Latitude", tag="lat_max_filter", default_value=self.lat_max_filter, callback=self._filter_callback)
-            dpg.add_input_float(label="Min Longitude", tag="lon_min_filter", default_value=self.lon_min_filter, callback=self._filter_callback)
-            dpg.add_input_float(label="Max Longitude", tag="lon_max_filter", default_value=self.lon_max_filter, callback=self._filter_callback)
-            dpg.add_input_float(label="Min Height", tag="height_min_filter", default_value=self.height_min_filter, callback=self._filter_callback)
-            dpg.add_input_float(label="Max Height", tag="height_max_filter", default_value=self.height_max_filter, callback=self._filter_callback)
-            dpg.add_checkbox(label="GBS", tag="gbs_filter", default_value=self.gbs_filter, callback=self._filter_callback)
-            dpg.add_combo(label="Category", tag="category_filter", items=self.categories, default_value=self.category_filter, callback=self._filter_callback)
+            dpg.add_input_float(
+                label="Min Latitude",
+                tag="lat_min_filter",
+                default_value=self.lat_min_filter,
+                callback=self._filter_callback,
+            )
+            dpg.add_input_float(
+                label="Max Latitude",
+                tag="lat_max_filter",
+                default_value=self.lat_max_filter,
+                callback=self._filter_callback,
+            )
+            dpg.add_input_float(
+                label="Min Longitude",
+                tag="lon_min_filter",
+                default_value=self.lon_min_filter,
+                callback=self._filter_callback,
+            )
+            dpg.add_input_float(
+                label="Max Longitude",
+                tag="lon_max_filter",
+                default_value=self.lon_max_filter,
+                callback=self._filter_callback,
+            )
+            dpg.add_input_float(
+                label="Min Height",
+                tag="height_min_filter",
+                default_value=self.height_min_filter,
+                callback=self._filter_callback,
+            )
+            dpg.add_input_float(
+                label="Max Height",
+                tag="height_max_filter",
+                default_value=self.height_max_filter,
+                callback=self._filter_callback,
+            )
+            dpg.add_combo(
+                label="Ground Status",
+                tag="ground_status_filter",
+                items=self.ground_statuses,
+                default_value=self.ground_status_filter,
+                callback=self._filter_callback,
+            )
+            dpg.add_combo(
+                label="Category",
+                tag="category_filter",
+                items=self.categories,
+                default_value=self.category_filter,
+                callback=self._filter_callback,
+            )
 
-        with dpg.window(label="Clicked Aircraft Info", width=250, height=150, pos=[950, 360]):
+        with dpg.window(
+            label="Clicked Aircraft Info", width=250, height=150, pos=[950, 360]
+        ):
             dpg.add_text("ID: N/A", tag="clicked_id")
             dpg.add_text("Category: N/A", tag="clicked_category")
             dpg.add_text("Height: N/A", tag="clicked_height")
             dpg.add_text("Time: N/A", tag="clicked_time")
 
-        with dpg.window(tag="custom_tooltip", show=False, no_title_bar=True, no_resize=True, no_move=True, autosize=True):
+        with dpg.window(
+            tag="custom_tooltip",
+            show=False,
+            no_title_bar=True,
+            no_resize=True,
+            no_move=True,
+            autosize=True,
+        ):
             dpg.add_text("", tag="tooltip_text")
 
         with dpg.handler_registry():
@@ -589,7 +669,8 @@ class Dashboard:
                 # Position and show tooltip
                 mouse_pos_global = dpg.get_mouse_pos()
                 dpg.set_item_pos(
-                    "custom_tooltip", [mouse_pos_global[0] + 15, mouse_pos_global[1] + 15]
+                    "custom_tooltip",
+                    [mouse_pos_global[0] + 15, mouse_pos_global[1] + 15],
                 )
                 dpg.configure_item("custom_tooltip", show=True)
             else:
