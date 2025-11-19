@@ -27,14 +27,14 @@ if __name__ == "__main__":
     print(f"Test ADS-B: {args.test_adsb}")
     print(f"Test All: {args.test_all}")
     start = time()
-    radar_lat = (41 + 18 / 60.0 + 2.5184 / 3600.0)*np.pi/180
-    radar_lon = (2 + 6 / 60.0 + 7.4095 / 3600.0)*np.pi/180
+    radar_lat = (41 + 18 / 60.0 + 2.5184 / 3600.0) * np.pi / 180
+    radar_lon = (2 + 6 / 60.0 + 7.4095 / 3600.0) * np.pi / 180
     radar_alt = 27.25
     coords_radar = CoordinatesWGS84(radar_lat, radar_lon, radar_alt)
 
     if args.test_radar:
         decoder = Decoder()
-        decoded=decoder.load(
+        decoded = decoder.load(
             "Test_Data/datos_asterix_radar.ast",
             args.parallel,
             max_messages=args.max_messages,
@@ -42,7 +42,7 @@ if __name__ == "__main__":
         )
     if args.test_adsb:
         decoder = Decoder()
-        decoded=decoder.load(
+        decoded = decoder.load(
             "Test_Data/datos_asterix_adsb.ast",
             args.parallel,
             max_messages=args.max_messages,
@@ -50,7 +50,7 @@ if __name__ == "__main__":
         )
     if args.test_all:
         decoder = Decoder()
-        decoded=decoder.load(
+        decoded = decoder.load(
             "Test_Data/datos_asterix_combinado.ast",
             args.parallel,
             max_messages=args.max_messages,

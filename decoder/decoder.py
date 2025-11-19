@@ -12,11 +12,11 @@ class Decoder:
     def __init__(self):
         pass
 
-    def split_data(self, bit_data,max_messages=None):
+    def split_data(self, bit_data, max_messages=None):
         result = []
         current_pos = 0
         total_bits = len(bit_data)
-        i=0
+        i = 0
         with tqdm(total=total_bits // 8, desc="Splitting") as pbar:
             while current_pos + 24 <= total_bits:  # Need at least 24 bits for header
                 cat = bit_data[current_pos : current_pos + 8].uint
@@ -25,19 +25,17 @@ class Decoder:
 
                 if data_end > total_bits:
                     break
-                
+
                 data = bit_data[current_pos + 24 : data_end]
                 result.append((cat, length, data))
 
                 current_pos = data_end
                 pbar.update(length)
-                i+=1
+                i += 1
                 if max_messages is not None and i > max_messages:
                     break
 
         return result
-
-    
 
     def _decode_element(self, element, radar_coords=None):
         cat, length, data = element
@@ -54,11 +52,12 @@ class Decoder:
         print(f"Loaded {len(data)} bytes from {file_name}")
         splitted_data = self.split_data(bit_data, max_messages)
         decoded_messages = []
-        
+
         # Create a partial function with radar_coords
         from functools import partial
+
         decode_func = partial(self._decode_element, radar_coords=radar_coords)
-        
+
         if parallel:
             with Pool(processes=min(cpu_count() - 1, 8)) as pool:
                 results = list(
@@ -106,8 +105,7 @@ class Decoder:
 
         # Lista de columnas exacta que solicitaste
         cols_to_export = [
-            "Category"
-            "SAC",
+            "Category" "SAC",
             "SIC",
             "ATP Description",
             "ARC Description",
@@ -122,15 +120,13 @@ class Decoder:
             "Flight Level (FL)",
             "Altitude (ft)",
             "Target Identification",
-            "Range (m)"
-            "Theta",
+            "Range (m)" "Theta",
             "TA",
             "Barometric Pressure Setting",
             "GS(kts)",
-            "HDG(deg)"
-            "IAS",
+            "HDG(deg)" "IAS",
             "Mach",
-            "STAT"
+            "STAT",
         ]
 
         # Reordenar y filtrar el DataFrame para que coincida con la lista

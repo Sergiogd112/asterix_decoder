@@ -55,6 +55,7 @@ ALL_EXPECTED_COLUMNS = [
     "STAT (CAT48)",
 ]
 
+
 def generate_per_frame_df(df: pd.DataFrame):
     before_missing_count = df["Height (m)"].isna().sum()
     before_missing_mask = df["Height (m)"].isna()
@@ -234,21 +235,21 @@ class LoadingScreen:
         self.load_all = False
 
     def _file_dialog_callback(self, sender, app_data):
-        self.data_file = app_data['file_path_name']
+        self.data_file = app_data["file_path_name"]
         dpg.set_value("data_file_text", self.data_file)
 
     def _load_callback(self):
         max_messages = None if self.load_all else self.max_messages
-        
+
         dpg.configure_item("load_button", show=False)
         dpg.configure_item("loading_text", show=True)
 
         df = load_messages(self.data_file, max_messages=max_messages)
-        
+
         dashboard = Dashboard(df)
         self.main_controller.set_dashboard(dashboard)
         dashboard.create_ui()
-        
+
         dpg.delete_item("Loading Window")
         dpg.set_primary_window("Primary Window", True)
 
@@ -272,25 +273,30 @@ class LoadingScreen:
             dpg.add_text("Select ASTERIX data file:")
             with dpg.group(horizontal=True):
                 dpg.add_text(self.data_file, tag="data_file_text")
-                dpg.add_button(label="Select File", callback=lambda: dpg.show_item("file_dialog_id"))
+                dpg.add_button(
+                    label="Select File",
+                    callback=lambda: dpg.show_item("file_dialog_id"),
+                )
 
             dpg.add_spacer()
 
             dpg.add_input_int(
                 label="Max Messages",
                 default_value=self.max_messages,
-                callback=lambda s, a: setattr(self, 'max_messages', a),
-                tag="max_messages_input"
+                callback=lambda s, a: setattr(self, "max_messages", a),
+                tag="max_messages_input",
             )
             dpg.add_checkbox(
                 label="Load All",
                 callback=self._toggle_load_all,
-                tag="load_all_checkbox"
+                tag="load_all_checkbox",
             )
 
             dpg.add_spacer()
-            
-            dpg.add_button(label="Load and Run", callback=self._load_callback, tag="load_button")
+
+            dpg.add_button(
+                label="Load and Run", callback=self._load_callback, tag="load_button"
+            )
             dpg.add_text("Loading...", show=False, tag="loading_text")
 
 
@@ -314,9 +320,7 @@ class Dashboard:
 
     def __init__(self, df: pd.DataFrame):
         self.df = df
-        self.df["Ground Status"] = self.df.apply(
-            self.determine_ground_status, axis=1
-        )
+        self.df["Ground Status"] = self.df.apply(self.determine_ground_status, axis=1)
         self.per_frame_df = generate_per_frame_df(df)
         self.per_frame_df = self.per_frame_df.dropna(
             subset=["Latitude (deg)", "Longitude (deg)"]
@@ -470,8 +474,12 @@ class Dashboard:
             current_columns = self.filtered_df.columns.tolist()
 
             # Separate desired columns from the rest
-            first_columns = [col for col in desired_first_columns if col in current_columns]
-            remaining_columns = [col for col in current_columns if col not in desired_first_columns]
+            first_columns = [
+                col for col in desired_first_columns if col in current_columns
+            ]
+            remaining_columns = [
+                col for col in current_columns if col not in desired_first_columns
+            ]
 
             # Combine to get the new order
             new_column_order = first_columns + remaining_columns
@@ -568,7 +576,6 @@ class Dashboard:
                 width=-1,
                 tag="map_plot",
             ):
-
 
                 # Setup axes first
                 dpg.add_plot_axis(dpg.mvXAxis, label="Longitude (deg)", tag="x_axis")
@@ -674,8 +681,6 @@ class Dashboard:
             dpg.add_text("Category: N/A", tag="clicked_category")
             dpg.add_text("Height: N/A", tag="clicked_height")
             dpg.add_text("Time: N/A", tag="clicked_time")
-
-
 
         with dpg.handler_registry():
             dpg.add_mouse_wheel_handler(callback=self._mouse_wheel_callback)
@@ -794,7 +799,7 @@ class MainController:
 
     def run(self):
         dpg.create_context()
-        
+
         loading_screen = LoadingScreen(self)
         loading_screen.create_ui()
 

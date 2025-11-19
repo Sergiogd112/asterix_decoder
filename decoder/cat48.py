@@ -20,8 +20,10 @@ def decode_time_of_day(data, pos):
     h = time_of_day // 3600
     m = (time_of_day // 60) % 60
     s = time_of_day % 60
-    return {"UTC Time (HH:MM:SS)": f"{h}:{m}:{s}",
-            "Time (s since midnight)": time_of_day}, 24
+    return {
+        "UTC Time (HH:MM:SS)": f"{h}:{m}:{s}",
+        "Time (s since midnight)": time_of_day,
+    }, 24
 
 
 def decode_target_desc(data, pos):
@@ -668,11 +670,17 @@ def decode_cat48(
         and "Theta" in decoded
         # and "Height (m)" in decoded
     ):
-        if "Height (m)" not in decoded and "STAT" in decoded and decoded["STAT"].endswith("ground"):
-            decoded["Flight Level (FL)"]=decoded["Height (m)"]=decoded["Height (ft)"]=0
+        if (
+            "Height (m)" not in decoded
+            and "STAT" in decoded
+            and decoded["STAT"].endswith("ground")
+        ):
+            decoded["Flight Level (FL)"] = decoded["Height (m)"] = decoded[
+                "Height (ft)"
+            ] = 0
         elif "Height (m)" not in decoded:
             return decoded
-        
+
         # Convert polar to Cartesian coordinates
         r = decoded["Range (m)"]
         theta_rad = np.deg2rad(decoded["Theta"])

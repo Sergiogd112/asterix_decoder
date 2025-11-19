@@ -6,9 +6,10 @@ QNE_HPA = 1013.25
 TRANSITION_ALTITUDE_FT = 6000
 FEET_PER_HPA = 30
 
+
 def qnh_to_qne(qnh_hpa, elevation_ft):
-    #Convierte la altitud de QNH a QNE (FL)
-    
+    # Convierte la altitud de QNH a QNE (FL)
+
     # Presión estándar internacional (ISA)
     qne_hpa = 1013.25
 
@@ -26,6 +27,7 @@ def qnh_to_qne(qnh_hpa, elevation_ft):
 
     return flight_level
 
+
 def qnh_to_qfe(qnh_hpa, airport_elevation_ft):
 
     # Calcula la caída de presión por la elevación del aeropuerto
@@ -36,14 +38,17 @@ def qnh_to_qfe(qnh_hpa, airport_elevation_ft):
 
     return qfe_hpa
 
-def apply_qnh_correction(df: pd.DataFrame, bp_column_name: str, alt_column_name: str = "Altitude (ft)") -> pd.DataFrame:
+
+def apply_qnh_correction(
+    df: pd.DataFrame, bp_column_name: str, alt_column_name: str = "Altitude (ft)"
+) -> pd.DataFrame:
 
     # Altitud real = Altitud indicada + (QNH actual - QNH estándar) * 30 ft
     # Se aplica solo por debajo de la Altitud de Transición (6000 ft).
-    
+
     if bp_column_name not in df.columns:
         # No se encontró BP, simplemente crea la columna duplicada
-        df['Altitude_Corrected_ft'] = df.get(alt_column_name)
+        df["Altitude_Corrected_ft"] = df.get(alt_column_name)
         return df
 
     if alt_column_name not in df.columns:
@@ -54,24 +59,26 @@ def apply_qnh_correction(df: pd.DataFrame, bp_column_name: str, alt_column_name:
     df_corrected = df.copy()
 
     # Convertir altitud y BP a numérico, forzando errores a NaN
-    alt = pd.to_numeric(df_corrected[alt_column_name], errors='coerce')
-    bps = pd.to_numeric(df_corrected[bp_column_name], errors='coerce')
-    
+    alt = pd.to_numeric(df_corrected[alt_column_name], errors="coerce")
+    bps = pd.to_numeric(df_corrected[bp_column_name], errors="coerce")
+
     # Rellenar BP faltantes (NaN) con QNE para que la corrección sea 0
     bps = bps.fillna(QNE_HPA)
 
     # 1. Calcular la corrección en pies
     correction_ft = (bps - QNE_HPA) * FEET_PER_HPA
-    
+
     # 2. Aplicar la corrección SOLO si la altitud está por debajo de la TA
     # Usamos np.where para la lógica condicional
-    df_corrected['Altitude_Corrected_ft'] = np.where(
+    df_corrected["Altitude_Corrected_ft"] = np.where(
         (alt < TRANSITION_ALTITUDE_FT),
-        alt + correction_ft,            # Si es verdadero
-        alt                             # Si es falso (usar alt original)
+        alt + correction_ft,  # Si es verdadero
+        alt,  # Si es falso (usar alt original)
     )
-    
+
     # Redondear para legibilidad
-    df_corrected['Altitude_Corrected_ft'] = df_corrected['Altitude_Corrected_ft'].round(2)
-    
+    df_corrected["Altitude_Corrected_ft"] = df_corrected["Altitude_Corrected_ft"].round(
+        2
+    )
+
     return df_corrected
