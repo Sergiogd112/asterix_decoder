@@ -1,7 +1,7 @@
 [project]
 name = "asterix-decoder"
 version = "0.1.0"
-description = "Add your description here"
+description = "ASTERIX decoder and dashboard for aircraft tracking visualization"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -24,3 +24,6 @@ dependencies = [
     "scipy>=1.15.3",
     "tqdm>=4.67.1",
 ]
+
+[tool.setuptools]
+packages = ["decoder"]
