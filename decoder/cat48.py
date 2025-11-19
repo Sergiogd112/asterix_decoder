@@ -162,8 +162,8 @@ def decode_fl_binary(data, pos):
         # "Validated": bool(validated),
         # "Garbled": bool(garbled),
         "Flight Level (FL)": fl,
-        "Height (ft)": fl * 100,
-        "Height (m)": fl * 30.48,
+        "Altitude (ft)": fl * 100,
+        "Altitude (m)": fl * 30.48,
     }, 16
 
 
@@ -665,26 +665,24 @@ def decode_cat48(
             decoded.update(result)
         pos += step
     if (
-        radar_coords
-        and "Range (m)" in decoded
-        and "Theta" in decoded
-        # and "Height (m)" in decoded
+        radar_coords and "Range (m)" in decoded and "Theta" in decoded
+        # and "Altitude (m)" in decoded
     ):
         if (
-            "Height (m)" not in decoded
+            "Altitude (m)" not in decoded
             and "STAT" in decoded
             and decoded["STAT"].endswith("ground")
         ):
-            decoded["Flight Level (FL)"] = decoded["Height (m)"] = decoded[
-                "Height (ft)"
+            decoded["Flight Level (FL)"] = decoded["Altitude (m)"] = decoded[
+                "Altitude (ft)"
             ] = 0
-        elif "Height (m)" not in decoded:
+        elif "Altitude (m)" not in decoded:
             return decoded
 
         # Convert polar to Cartesian coordinates
         r = decoded["Range (m)"]
         theta_rad = np.deg2rad(decoded["Theta"])
-        H = decoded["Height (m)"]
+        H = decoded["Altitude (m)"]
         elevation_rad = np.asin((H - radar_coords.height) / r)
         coords_polar = CoordinatesPolar(r, theta_rad, elevation_rad)
         coords_cart = GeoUtils.change_radar_spherical_2_radar_cartesian(coords_polar)
@@ -696,7 +694,7 @@ def decode_cat48(
             {
                 "Latitude (deg)": coords_geodesic.lat * 180.0 / np.pi,
                 "Longitude (deg)": coords_geodesic.lon * 180.0 / np.pi,
-                "Height (m)": coords_geodesic.height,
+                "Altitude (m)": coords_geodesic.height,
             }
         )
     return decoded

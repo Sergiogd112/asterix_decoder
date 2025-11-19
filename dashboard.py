@@ -41,7 +41,7 @@ ALL_EXPECTED_COLUMNS = [
     "Mode-3/A Code",
     "Flight Level (FL)",
     "Altitude (ft)",
-    "Height (m)",
+    "Altitude (m)",
     "Target Identification",
     "IAS (kt)",
     "Mach",
@@ -57,13 +57,13 @@ ALL_EXPECTED_COLUMNS = [
 
 
 def generate_per_frame_df(df: pd.DataFrame):
-    before_missing_count = df["Height (m)"].isna().sum()
-    before_missing_mask = df["Height (m)"].isna()
+    before_missing_count = df["Altitude (m)"].isna().sum()
+    before_missing_mask = df["Altitude (m)"].isna()
 
     def _time_weight_interp(g):
         g = g.sort_values("Time (s since midnight)").copy()
         t = g["Time (s since midnight)"].astype(float).to_numpy()
-        h = g["Height (m)"].to_numpy(dtype=float)
+        h = g["Altitude (m)"].to_numpy(dtype=float)
         mask_known = ~np.isnan(h)
         non_na = int(mask_known.sum())
         if non_na == 0:
@@ -72,14 +72,14 @@ def generate_per_frame_df(df: pd.DataFrame):
         if non_na == 1:
             # Only a single known value: fill entire group with that value
             single_val = float(h[mask_known][0])
-            g["Height (m)"] = single_val
+            g["Altitude (m)"] = single_val
             return g
         # Use numpy.interp which performs linear interpolation in x (time).
         t_known = t[mask_known]
         h_known = h[mask_known]
         # np.interp will fill values outside known xp with edge values (desired behavior)
         h_interp = np.interp(t, t_known, h_known)
-        g["Height (m)"] = h_interp
+        g["Altitude (m)"] = h_interp
         return g
 
     # Apply per-aircraft interpolation using time as the independent variable
@@ -87,11 +87,11 @@ def generate_per_frame_df(df: pd.DataFrame):
         _time_weight_interp
     )
 
-    after_missing_count = df["Height (m)"].isna().sum()
-    print("Missing Height (m) after :", after_missing_count)
+    after_missing_count = df["Altitude (m)"].isna().sum()
+    print("Missing Altitude (m) after :", after_missing_count)
 
     # Show a few example rows that were NaN before but are now filled:
-    filled_rows = df[~df["Height (m)"].isna() & before_missing_mask]
+    filled_rows = df[~df["Altitude (m)"].isna() & before_missing_mask]
     rows = []
     for (aid, cat), g in tqdm(df.groupby(["Target Identification", "Category"])):
         g = g.sort_values("frame")
@@ -104,7 +104,7 @@ def generate_per_frame_df(df: pd.DataFrame):
             {
                 "Latitude (deg)": "mean",
                 "Longitude (deg)": "mean",
-                "Height (m)": "mean",
+                "Altitude (m)": "mean",
                 "IAS (kt)": "first",
                 "Magnetic Heading (deg)": "first",
                 "Ground Speed (kts)": "first",
@@ -123,7 +123,7 @@ def generate_per_frame_df(df: pd.DataFrame):
         agg["frame"] = agg["frame"].astype(int)
 
         # Interpolate each coordinate using the frame integer as x-axis
-        for col in ["Latitude (deg)", "Longitude (deg)", "Height (m)"]:
+        for col in ["Latitude (deg)", "Longitude (deg)", "Altitude (m)"]:
             vals = agg[col].to_numpy(dtype=float)
             # known points mask
             known = ~np.isnan(vals)
@@ -155,7 +155,7 @@ def generate_per_frame_df(df: pd.DataFrame):
                     "Time (s since midnight)",
                     "Latitude (deg)",
                     "Longitude (deg)",
-                    "Height (m)",
+                    "Altitude (m)",
                     "IAS (kt)",
                     "Magnetic Heading (deg)",
                     "Ground Speed (kts)",
@@ -177,7 +177,7 @@ def generate_per_frame_df(df: pd.DataFrame):
                 "Time (s since midnight)",
                 "Latitude (deg)",
                 "Longitude (deg)",
-                "Height (m)",
+                "Altitude (m)",
                 "IAS (kt)",
                 "Magnetic Heading (deg)",
                 "Ground Speed (kts)",
@@ -352,8 +352,8 @@ class Dashboard:
         self.lat_max_filter = 41.7
         self.lon_min_filter = 1.5
         self.lon_max_filter = 2.6
-        self.height_min_filter = self.per_frame_df["Height (m)"].min()
-        self.height_max_filter = self.per_frame_df["Height (m)"].max()
+        self.altitude_min_filter = self.per_frame_df["Altitude (m)"].min()
+        self.altitude_max_filter = self.per_frame_df["Altitude (m)"].max()
         self.ground_status_filter = "All"
         self.category_filter = "All"
         self.categories = ["All"] + self.per_frame_df["Category"].unique().tolist()
@@ -373,8 +373,8 @@ class Dashboard:
                 & (filtered_df["Latitude (deg)"] <= self.lat_max_filter)
                 & (filtered_df["Longitude (deg)"] >= self.lon_min_filter)
                 & (filtered_df["Longitude (deg)"] <= self.lon_max_filter)
-                & (filtered_df["Height (m)"] >= self.height_min_filter)
-                & (filtered_df["Height (m)"] <= self.height_max_filter)
+                & (filtered_df["Altitude (m)"] >= self.altitude_min_filter)
+                & (filtered_df["Altitude (m)"] <= self.altitude_max_filter)
             ]
 
             if self.ground_status_filter != "All":
@@ -394,7 +394,7 @@ class Dashboard:
         if not filtered_df.empty:
             # Drop rows with NaN in coordinate columns to avoid errors
             filtered_df = filtered_df.dropna(
-                subset=["Latitude (deg)", "Longitude (deg)", "Height (m)"]
+                subset=["Latitude (deg)", "Longitude (deg)", "Altitude (m)"]
             )
 
             filtered_df = filtered_df[
@@ -402,8 +402,8 @@ class Dashboard:
                 & (filtered_df["Latitude (deg)"] <= self.lat_max_filter)
                 & (filtered_df["Longitude (deg)"] >= self.lon_min_filter)
                 & (filtered_df["Longitude (deg)"] <= self.lon_max_filter)
-                & (filtered_df["Height (m)"] >= self.height_min_filter)
-                & (filtered_df["Height (m)"] <= self.height_max_filter)
+                & (filtered_df["Altitude (m)"] >= self.altitude_min_filter)
+                & (filtered_df["Altitude (m)"] <= self.altitude_max_filter)
             ]
 
             if self.ground_status_filter != "All":
@@ -428,10 +428,10 @@ class Dashboard:
             self.lon_min_filter = app_data
         elif filter_tag == "lon_max_filter":
             self.lon_max_filter = app_data
-        elif filter_tag == "height_min_filter":
-            self.height_min_filter = app_data
-        elif filter_tag == "height_max_filter":
-            self.height_max_filter = app_data
+        elif filter_tag == "altitude_min_filter":
+            self.altitude_min_filter = app_data
+        elif filter_tag == "altitude_max_filter":
+            self.altitude_max_filter = app_data
         elif filter_tag == "ground_status_filter":
             self.ground_status_filter = app_data
         elif filter_tag == "category_filter":
@@ -467,7 +467,7 @@ class Dashboard:
                 "SIC",
                 "Latitude (deg)",
                 "Longitude (deg)",
-                "Height (m)",
+                "Altitude (m)",
                 "Target Identification",
             ]
 
@@ -576,7 +576,6 @@ class Dashboard:
                 width=-1,
                 tag="map_plot",
             ):
-
                 # Setup axes first
                 dpg.add_plot_axis(dpg.mvXAxis, label="Longitude (deg)", tag="x_axis")
                 dpg.add_plot_axis(dpg.mvYAxis, label="Latitude (deg)", tag="y_axis")
@@ -646,15 +645,15 @@ class Dashboard:
                 callback=self._filter_callback,
             )
             dpg.add_input_float(
-                label="Min Height",
-                tag="height_min_filter",
-                default_value=self.height_min_filter,
+                label="Min Altitude",
+                tag="altitude_min_filter",
+                default_value=self.altitude_min_filter,
                 callback=self._filter_callback,
             )
             dpg.add_input_float(
-                label="Max Height",
-                tag="height_max_filter",
-                default_value=self.height_max_filter,
+                label="Max Altitude",
+                tag="altitude_max_filter",
+                default_value=self.altitude_max_filter,
                 callback=self._filter_callback,
             )
             dpg.add_combo(
@@ -679,7 +678,7 @@ class Dashboard:
         ):
             dpg.add_text("ID: N/A", tag="clicked_id")
             dpg.add_text("Category: N/A", tag="clicked_category")
-            dpg.add_text("Height: N/A", tag="clicked_height")
+            dpg.add_text("Altitude: N/A", tag="clicked_altitude")
             dpg.add_text("Time: N/A", tag="clicked_time")
 
         with dpg.handler_registry():
@@ -732,7 +731,7 @@ class Dashboard:
                 info = (
                     f"ID: {closest_aircraft['Target Identification']}\n"
                     f"Category: {closest_aircraft['Category']}\n"
-                    f"Height: {closest_aircraft['Height (m)']:.2f} m\n"
+                    f"Altitude: {closest_aircraft['Altitude (m)']:.2f} m\n"
                     f"Time: {closest_aircraft['Time (s since midnight)']} s"
                 )
                 if pd.notna(closest_aircraft.get("IAS (kt)")):
@@ -776,8 +775,8 @@ class Dashboard:
                     f"Category: {clicked_aircraft_data.iloc[0]['Category']}",
                 )
                 dpg.set_value(
-                    "clicked_height",
-                    f"Height: {clicked_aircraft_data.iloc[0]['Height (m)']:.2f} m",
+                    "clicked_altitude",
+                    f"Altitude: {clicked_aircraft_data.iloc[0]['Altitude (m)']:.2f} m",
                 )
                 dpg.set_value(
                     "clicked_time",
@@ -786,7 +785,7 @@ class Dashboard:
             else:
                 dpg.set_value("clicked_id", f"ID: {aid} (out of frame)")
                 dpg.set_value("clicked_category", f"Category: {cat} (out of frame)")
-                dpg.set_value("clicked_height", "Height: N/A")
+                dpg.set_value("clicked_altitude", "Altitude: N/A")
                 dpg.set_value("clicked_time", "Time: N/A")
 
 

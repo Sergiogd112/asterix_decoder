@@ -189,7 +189,7 @@ def decode_flight_level(data: bitstring.BitArray):
     return {
         "Flight Level (FL)": flight_level_corrected,
         "Altitude (ft)": flight_level_corrected * 100,
-        "Height (m)": flight_level_corrected * 30.48,
+        "Altitude (m)": flight_level_corrected * 30.48,
     }, 16
 
 
