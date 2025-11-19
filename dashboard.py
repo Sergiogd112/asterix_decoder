@@ -186,23 +186,9 @@ def generate_per_frame_df(df: pd.DataFrame):
         )
     )
 
-    def determine_ground_status(row):
-        if pd.notna(row["STAT (CAT48)"]):
-            stat = row["STAT (CAT48)"]
-            is_ground = "on ground" in stat
-            is_airborne = "airborne" in stat
-            if is_ground and not is_airborne:
-                return "On Ground"
-            if is_airborne and not is_ground:
-                return "Airborne"
-        if pd.notna(row["Target Status GBS"]):
-            if row["Target Status GBS"] == "Ground bit set":
-                return "On Ground"
-            if row["Target Status GBS"] == "No ground bit":
-                return "Airborne"
-        return "Unknown"
-
-    per_frame_df["Ground Status"] = per_frame_df.apply(determine_ground_status, axis=1)
+    per_frame_df["Ground Status"] = per_frame_df.apply(
+        Dashboard.determine_ground_status, axis=1
+    )
 
     # Sort for convenience
     per_frame_df = per_frame_df.sort_values(
@@ -309,7 +295,28 @@ class LoadingScreen:
 
 
 class Dashboard:
+    @staticmethod
+    def determine_ground_status(row):
+        if pd.notna(row["STAT (CAT48)"]):
+            stat = row["STAT (CAT48)"]
+            is_ground = "on ground" in stat
+            is_airborne = "airborne" in stat
+            if is_ground and not is_airborne:
+                return "On Ground"
+            if is_airborne and not is_ground:
+                return "Airborne"
+        if pd.notna(row["Target Status GBS"]):
+            if row["Target Status GBS"] == "Ground bit set":
+                return "On Ground"
+            if row["Target Status GBS"] == "No ground bit":
+                return "Airborne"
+        return "Unknown"
+
     def __init__(self, df: pd.DataFrame):
+        self.df = df
+        self.df["Ground Status"] = self.df.apply(
+            self.determine_ground_status, axis=1
+        )
         self.per_frame_df = generate_per_frame_df(df)
         self.per_frame_df = self.per_frame_df.dropna(
             subset=["Latitude (deg)", "Longitude (deg)"]
@@ -349,6 +356,7 @@ class Dashboard:
         self.ground_statuses = ["All", "On Ground", "Airborne"]
 
         self.filtered_per_frame_df = self.per_frame_df.copy()
+        self.filtered_df = self.df.copy()
 
     def _apply_filters(self):
         """Filters the per_frame_df based on the current filter settings."""
@@ -376,6 +384,34 @@ class Dashboard:
                 ]
 
         self.filtered_per_frame_df = filtered_df
+
+        # Filter df
+        filtered_df = self.df.copy()
+        if not filtered_df.empty:
+            # Drop rows with NaN in coordinate columns to avoid errors
+            filtered_df = filtered_df.dropna(
+                subset=["Latitude (deg)", "Longitude (deg)", "Height (m)"]
+            )
+
+            filtered_df = filtered_df[
+                (filtered_df["Latitude (deg)"] >= self.lat_min_filter)
+                & (filtered_df["Latitude (deg)"] <= self.lat_max_filter)
+                & (filtered_df["Longitude (deg)"] >= self.lon_min_filter)
+                & (filtered_df["Longitude (deg)"] <= self.lon_max_filter)
+                & (filtered_df["Height (m)"] >= self.height_min_filter)
+                & (filtered_df["Height (m)"] <= self.height_max_filter)
+            ]
+
+            if self.ground_status_filter != "All":
+                filtered_df = filtered_df[
+                    filtered_df["Ground Status"] == self.ground_status_filter
+                ]
+
+            if self.category_filter != "All":
+                filtered_df = filtered_df[
+                    filtered_df["Category"].astype(str) == self.category_filter
+                ]
+        self.filtered_df = filtered_df
 
     def _filter_callback(self, sender, app_data):
         """Callback for all filter UI elements."""
@@ -412,6 +448,39 @@ class Dashboard:
     def _frame_slider_callback(self, sender, app_data):
         self.current_frame = app_data
         self._update_plot()
+
+    def _export_callback(self):
+        dpg.show_item("export_dialog_id")
+
+    def _save_csv_callback(self, sender, app_data):
+        # Check if a file was selected
+        if "file_path_name" in app_data:
+            file_path = app_data["file_path_name"]
+
+            desired_first_columns = [
+                "Category",
+                "SAC",
+                "SIC",
+                "Latitude (deg)",
+                "Longitude (deg)",
+                "Height (m)",
+                "Target Identification",
+            ]
+
+            current_columns = self.filtered_df.columns.tolist()
+
+            # Separate desired columns from the rest
+            first_columns = [col for col in desired_first_columns if col in current_columns]
+            remaining_columns = [col for col in current_columns if col not in desired_first_columns]
+
+            # Combine to get the new order
+            new_column_order = first_columns + remaining_columns
+
+            # Reindex the DataFrame
+            df_to_export = self.filtered_df[new_column_order]
+
+            df_to_export.to_csv(file_path, index=False)
+        dpg.configure_item("export_dialog_id", show=False)
 
     def _update_plot(self):
         if not hasattr(self, "filtered_per_frame_df"):
@@ -462,6 +531,17 @@ class Dashboard:
             dpg.set_axis_limits("y_axis", new_y_min, new_y_max)
 
     def create_ui(self):
+        with dpg.file_dialog(
+            directory_selector=False,
+            show=False,
+            callback=self._save_csv_callback,
+            tag="export_dialog_id",
+            width=700,
+            height=400,
+            default_filename="filtered_data.csv",
+        ):
+            dpg.add_file_extension(".csv")
+
         with dpg.window(tag="Primary Window"):
             with dpg.group(horizontal=True):
                 dpg.add_button(label="Play", callback=self._play_callback)
@@ -488,7 +568,7 @@ class Dashboard:
                 width=-1,
                 tag="map_plot",
             ):
-                dpg.add_plot_legend()
+
 
                 # Setup axes first
                 dpg.add_plot_axis(dpg.mvXAxis, label="Longitude (deg)", tag="x_axis")
@@ -528,6 +608,9 @@ class Dashboard:
                     self.aircraft_series[key] = dpg.add_scatter_series(
                         x=[], y=[], label=f"{aid}-{cat}", parent="y_axis"
                     )
+            with dpg.tooltip(parent="y_axis", tag="plot_tooltip"):
+                dpg.add_text("", tag="tooltip_text")
+            dpg.configure_item("plot_tooltip", show=False)
 
         with dpg.window(label="Filters", width=250, height=300, pos=[950, 50]):
             dpg.add_text("Filters")
@@ -581,6 +664,8 @@ class Dashboard:
                 default_value=self.category_filter,
                 callback=self._filter_callback,
             )
+            dpg.add_spacer()
+            dpg.add_button(label="Export to CSV", callback=self._export_callback)
 
         with dpg.window(
             label="Clicked Aircraft Info", width=250, height=150, pos=[950, 360]
@@ -590,15 +675,7 @@ class Dashboard:
             dpg.add_text("Height: N/A", tag="clicked_height")
             dpg.add_text("Time: N/A", tag="clicked_time")
 
-        with dpg.window(
-            tag="custom_tooltip",
-            show=False,
-            no_title_bar=True,
-            no_resize=True,
-            no_move=True,
-            autosize=True,
-        ):
-            dpg.add_text("", tag="tooltip_text")
+
 
         with dpg.handler_registry():
             dpg.add_mouse_wheel_handler(callback=self._mouse_wheel_callback)
@@ -665,19 +742,12 @@ class Dashboard:
                     info += f"\nSTAT (CAT48): {closest_aircraft['STAT (CAT48)']}"
 
                 dpg.set_value("tooltip_text", info)
-
-                # Position and show tooltip
-                mouse_pos_global = dpg.get_mouse_pos()
-                dpg.set_item_pos(
-                    "custom_tooltip",
-                    [mouse_pos_global[0] + 15, mouse_pos_global[1] + 15],
-                )
-                dpg.configure_item("custom_tooltip", show=True)
+                dpg.configure_item("plot_tooltip", show=True)
             else:
-                dpg.configure_item("custom_tooltip", show=False)
+                dpg.configure_item("plot_tooltip", show=False)
                 closest_aircraft = None  # Reset if not close enough
         else:
-            dpg.configure_item("custom_tooltip", show=False)
+            dpg.configure_item("plot_tooltip", show=False)
 
         if dpg.is_item_clicked("map_plot") and closest_aircraft is not None:
             self.clicked_aircraft_key = (
