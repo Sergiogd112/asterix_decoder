@@ -22,7 +22,6 @@ a = Analysis(
     runtime_hooks=[],
     excludes=[
         'matplotlib',
-        'scipy',
         'contextily',
         'imageio',
         'ffmpeg-python',
@@ -31,7 +30,6 @@ a = Analysis(
         'ipywidgets',
         'nbformat',
         'black',
-        'rich',
     ],
     noarchive=False,
     optimize=0,
