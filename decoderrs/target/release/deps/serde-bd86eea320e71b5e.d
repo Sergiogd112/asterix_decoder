@@ -1,0 +1,14 @@
+/home/sergiogd/Github/asterix_decoder/decoderrs/target/release/deps/serde-bd86eea320e71b5e.d: /home/sergiogd/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /home/sergiogd/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /home/sergiogd/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /home/sergiogd/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /home/sergiogd/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /home/sergiogd/Github/asterix_decoder/decoderrs/target/release/build/serde-cfe125327cacaf16/out/private.rs
+
+/home/sergiogd/Github/asterix_decoder/decoderrs/target/release/deps/libserde-bd86eea320e71b5e.rlib: /home/sergiogd/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /home/sergiogd/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /home/sergiogd/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /home/sergiogd/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /home/sergiogd/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /home/sergiogd/Github/asterix_decoder/decoderrs/target/release/build/serde-cfe125327cacaf16/out/private.rs
+
+/home/sergiogd/Github/asterix_decoder/decoderrs/target/release/deps/libserde-bd86eea320e71b5e.rmeta: /home/sergiogd/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /home/sergiogd/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /home/sergiogd/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /home/sergiogd/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /home/sergiogd/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /home/sergiogd/Github/asterix_decoder/decoderrs/target/release/build/serde-cfe125327cacaf16/out/private.rs
+
+/home/sergiogd/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs:
+/home/sergiogd/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs:
+/home/sergiogd/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs:
+/home/sergiogd/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs:
+/home/sergiogd/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs:
+/home/sergiogd/Github/asterix_decoder/decoderrs/target/release/build/serde-cfe125327cacaf16/out/private.rs:
+
+# env-dep:OUT_DIR=/home/sergiogd/Github/asterix_decoder/decoderrs/target/release/build/serde-cfe125327cacaf16/out
