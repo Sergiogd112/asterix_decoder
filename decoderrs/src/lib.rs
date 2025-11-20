@@ -1,11 +1,13 @@
+use bitvec::prelude::*;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
+use serde_json::Value;
 use std::fs::File;
 use std::io::Read;
-use bitvec::prelude::*;
-use serde_json::Value;
 
 mod cat48;
+mod geoutils;
+use geoutils::CoordinatesWGS84;
 
 fn json_to_py(py: Python, value: &Value) -> PyResult<PyObject> {
     match value {
@@ -40,18 +42,38 @@ fn json_to_py(py: Python, value: &Value) -> PyResult<PyObject> {
     }
 }
 
-#[pyfunction]
-fn load(py: Python, file_path: String) -> PyResult<PyObject> {
+#[pyfunction(signature = (file_path, radar_lat, radar_lon, radar_alt, max_messages=None))]
+fn load(
+    py: Python,
+    file_path: String,
+    radar_lat: f64,
+    radar_lon: f64,
+    radar_alt: f64,
+    max_messages: Option<usize>,
+) -> PyResult<PyObject> {
     let mut file = File::open(file_path)?;
     let mut buffer = Vec::new();
     file.read_to_end(&mut buffer)?;
+
+    let radar_coords = CoordinatesWGS84 {
+        lat: radar_lat,
+        lon: radar_lon,
+        height: radar_alt,
+    };
 
     let bv = buffer.view_bits::<Msb0>();
     let list = PyList::empty_bound(py);
     let mut current_pos = 0;
     let total_bits = bv.len();
+    let mut message_count = 0;
 
     while current_pos + 24 <= total_bits {
+        if let Some(max) = max_messages {
+            if message_count >= max {
+                break;
+            }
+        }
+
         let cat = bv[current_pos..current_pos + 8].load::<u8>();
         let length = bv[current_pos + 8..current_pos + 24].load::<u16>();
 
@@ -66,10 +88,10 @@ fn load(py: Python, file_path: String) -> PyResult<PyObject> {
         }
 
         let data_slice = &bv[current_pos + 24..data_end];
-        
+
         let decoded_message = match cat {
             48 => {
-                let decoded = cat48::decode_cat48(data_slice);
+                let decoded = cat48::decode_cat48(data_slice, Some(radar_coords));
                 let json_value = serde_json::to_value(decoded).unwrap();
                 json_to_py(py, &json_value)?
             }
@@ -78,6 +100,7 @@ fn load(py: Python, file_path: String) -> PyResult<PyObject> {
 
         if !decoded_message.is_none(py) {
             list.append(decoded_message)?;
+            message_count += 1;
         }
 
         current_pos = data_end;
@@ -85,7 +108,6 @@ fn load(py: Python, file_path: String) -> PyResult<PyObject> {
 
     Ok(list.to_object(py))
 }
-
 
 /// A Python module implemented in Rust.
 #[pymodule]
