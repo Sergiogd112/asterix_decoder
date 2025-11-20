@@ -1,5 +1,48 @@
+# Python
 __pycache__/
 *.pyc
-build
-dist
-decoded_adsb_data.csv
+*.pyo
+*.pyd
+.Python
+build/
+dist/
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Rust
+decoderrs/target/
+**/*.rs.bk
+Cargo.lock
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data files
+*.csv
+*.json
+decoded_*.csv
+*_output*.json
+*_debug*.json
+watch_*
+
+# Benchmark and test outputs
+benchmark*.py
+debug_*.py
+clean_*.py
+quick_*.py
+simple_*.py
+test_*.py
+filter_*.py
+
+# Logs
+*.log
