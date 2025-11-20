@@ -59,3 +59,4 @@ if __name__ == "__main__":
     print(f"Decoded {len(decoded)} messages")
     # print(decoded)
     print(f"Elapsed Time: {time()-start} s")
+    decoder.export_to_csv(decoded)
