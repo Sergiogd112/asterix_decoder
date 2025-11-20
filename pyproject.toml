@@ -1,3 +1,7 @@
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
 [project]
 name = "asterix-decoder"
 version = "0.1.0"
@@ -24,6 +28,9 @@ dependencies = [
     "scipy>=1.15.3",
     "tqdm>=4.67.1",
 ]
+
+[tool.maturin]
+manifest-path = "decoderrs/Cargo.toml"
 
 [tool.setuptools]
 packages = ["decoder"]
