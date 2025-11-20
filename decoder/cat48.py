@@ -409,6 +409,7 @@ def decode_mode_s_mb_data(data, pos):
 def decode_track_number(data, pos):
     if len(data) - pos < 16:
         raise ValueError("Data length must be at least 16 bits for Track Number")
+    # print(data[pos : pos + 16].bin)
     track_num = data[pos + 4 : pos + 16].uint  # Bits 0-3 unused?
     return {"TN": track_num}, 16
     # return {"TrN":track_num}, 16
@@ -629,6 +630,10 @@ def decode_cat48(
 
     data_items_to_decode = [i for i, present in enumerate(fspec_block_1) if present]
 
+    # print(f"DEBUG Python: FSPEC block 1: {fspec_block_1}")
+    # print(f"DEBUG Python: FX1: {fx1}")
+    # print(f"DEBUG Python: Initial data items: {data_items_to_decode}")
+
     if fx1:
         # FSPEC Block 2: bits 8-14 items (offset +7), bit15 FX2
         fspec_block_2 = [data[pos + i] for i in range(7)]
@@ -637,6 +642,8 @@ def decode_cat48(
         data_items_to_decode += [
             i + 7 for i, present in enumerate(fspec_block_2) if present
         ]
+        # print(f"DEBUG Python: FSPEC block 2: {fspec_block_2}")
+        # print(f"DEBUG Python: Updated data items: {data_items_to_decode}")
 
         if fx2:
             # FSPEC Block 3: bits 16-22 items (+14), bit23 FX3
@@ -694,7 +701,7 @@ def decode_cat48(
             {
                 "Latitude (deg)": coords_geodesic.lat * 180.0 / np.pi,
                 "Longitude (deg)": coords_geodesic.lon * 180.0 / np.pi,
-                "Altitude (m)": coords_geodesic.height,
+                "Altitude (m)": H,
             }
         )
     return decoded

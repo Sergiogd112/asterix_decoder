@@ -74,8 +74,10 @@ fn load(
             }
         }
 
-        let cat = bv[current_pos..current_pos + 8].load::<u8>();
-        let length = bv[current_pos + 8..current_pos + 24].load::<u16>();
+        let cat = bv[current_pos..current_pos + 8].load_be::<u8>();
+        let length = bv[current_pos + 8..current_pos + 24].load_be::<u16>();
+
+
 
         if length < 3 {
             break;
@@ -98,9 +100,12 @@ fn load(
             _ => py.None(),
         };
 
+        // Only append non-None messages to match Python behavior
         if !decoded_message.is_none(py) {
             list.append(decoded_message)?;
             message_count += 1;
+            
+
         }
 
         current_pos = data_end;

@@ -2,7 +2,7 @@ import pandas as pd
 import bitstring
 from tqdm import tqdm
 from multiprocessing import Pool, cpu_count
-
+from rich import print
 from .cat21 import decode_cat21
 
 from .cat48 import decode_cat48
@@ -21,6 +21,7 @@ class Decoder:
             while current_pos + 24 <= total_bits:  # Need at least 24 bits for header
                 cat = bit_data[current_pos : current_pos + 8].uint
                 length = bit_data[current_pos + 8 : current_pos + 24].uint
+                # print(f"Found message with CAT={cat} and length={length}")
                 data_end = current_pos + (length) * 8
 
                 if data_end > total_bits:
@@ -80,6 +81,7 @@ class Decoder:
         decoded_messages.extend([msg for msg in results if msg is not None])
         if max_messages is not None:
             results = results[:max_messages]
+        # print(results)
         return results
 
     def export_to_csv(self, decoded_messages):
@@ -105,7 +107,7 @@ class Decoder:
 
         # Lista de columnas exacta que solicitaste
         cols_to_export = [
-            "Category" "SAC",
+            "CategorySAC",
             "SIC",
             "ATP Description",
             "ARC Description",
@@ -120,11 +122,11 @@ class Decoder:
             "Flight Level (FL)",
             "Altitude (ft)",
             "Target Identification",
-            "Range (m)" "Theta",
+            "Range (m)Theta",
             "TA",
             "Barometric Pressure Setting",
             "GS(kts)",
-            "HDG(deg)" "IAS",
+            "HDG(deg)IAS",
             "Mach",
             "STAT",
         ]
