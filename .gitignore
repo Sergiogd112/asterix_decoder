@@ -12,7 +12,7 @@ venv/
 env/
 
 # Rust
-decoderrs/target/
+decoderrs/target/*
 **/*.rs.bk
 Cargo.lock
 
