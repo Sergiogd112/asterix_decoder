@@ -149,26 +149,26 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: asterix-dashboard-linux
-        path: ./artifacts
+        path: ./artifacts/linux
 
     - name: Download Windows artifact
       uses: actions/download-artifact@v4
       with:
         name: asterix-dashboard-windows
-        path: ./artifacts
+        path: ./artifacts/windows
 
     - name: Download macOS artifact
       uses: actions/download-artifact@v4
       with:
         name: asterix-dashboard-macos
-        path: ./artifacts
+        path: ./artifacts/macos
 
     - name: Prepare release assets
       run: |
         mkdir -p release-assets
-        cp artifacts/asterix_dashboard release-assets/asterix-dashboard-linux
-        cp artifacts/asterix_dashboard.exe release-assets/asterix-dashboard-windows.exe
-        cp artifacts/asterix_dashboard release-assets/asterix-dashboard-macos
+        cp artifacts/linux/asterix_dashboard release-assets/asterix-dashboard-linux
+        cp artifacts/windows/asterix_dashboard.exe release-assets/asterix-dashboard-windows.exe
+        cp artifacts/macos/asterix_dashboard release-assets/asterix-dashboard-macos
         chmod +x release-assets/asterix-dashboard-linux
         chmod +x release-assets/asterix-dashboard-macos
 
