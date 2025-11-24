@@ -12,6 +12,7 @@ The dashboard loads ASTERIX data using `decoder.Decoder().load()` (see
 """
 
 import time
+import threading
 
 import dearpygui.dearpygui as dpg
 import numpy as np
@@ -91,7 +92,6 @@ def generate_per_frame_df(df: pd.DataFrame):
     print("Missing Altitude (m) after :", after_missing_count)
 
     # Show a few example rows that were NaN before but are now filled:
-    filled_rows = df[~df["Altitude (m)"].isna() & before_missing_mask]
     rows = []
     for (aid, cat), g in tqdm(df.groupby(["Target Identification", "Category"])):
         g = g.sort_values("frame")
@@ -198,7 +198,9 @@ def generate_per_frame_df(df: pd.DataFrame):
     return per_frame_df
 
 
-def load_messages(data_file: str, parallel: bool = True, max_messages=None):
+def load_messages(
+    data_file: str, parallel: bool = True, max_messages=None, decoder_choice="Python"
+):
     """Load ASTERIX messages using the project's Decoder and return a
     normalized pandas.DataFrame containing lat/lon and relevant fields.
 
@@ -206,15 +208,102 @@ def load_messages(data_file: str, parallel: bool = True, max_messages=None):
     "Time (s since midnight)"). When not present we fall back to the
     message index to produce animation frames.
     """
-    decoder = Decoder()
     radar_lat = (41 + 18 / 60.0 + 2.5184 / 3600.0) * np.pi / 180
     radar_lon = (2 + 6 / 60.0 + 7.4095 / 3600.0) * np.pi / 180
     radar_alt = 27.25
-    coords_radar = CoordinatesWGS84(radar_lat, radar_lon, radar_alt)
 
-    decoded = decoder.load(
-        data_file, parallel, max_messages=max_messages, radar_coords=coords_radar
-    )
+    if decoder_choice == "Rust":
+        try:
+            import decoderrs
+
+            raw_decoded = decoderrs.load(
+                file_path=data_file,
+                radar_lat=radar_lat,
+                radar_lon=radar_lon,
+                radar_alt=radar_alt,
+                max_messages=max_messages,
+            )
+
+            # Map Rust decoder output to expected format
+            decoded = []
+            for item in raw_decoded:
+                # Skip messages with no time information
+                time_value = item.get(
+                    "Time of Day", item.get("Time (s since midnight)", None)
+                )
+                if time_value is None:
+                    continue
+
+                mapped_item = {}
+
+                # Map fields with different names
+                mapped_item["Category"] = item.get("category", "")
+                mapped_item["SAC"] = item.get("SAC", 0)
+                mapped_item["SIC"] = item.get("SIC", 0)
+                mapped_item["ATP Description"] = ""
+                mapped_item["ARC Description"] = ""
+                mapped_item["RC Description"] = ""
+                mapped_item["RAB Description"] = (
+                    "RAB set" if item.get("RAB", False) else "RAB not set"
+                )
+                mapped_item["GBS"] = ""
+                mapped_item["Latitude (deg)"] = item.get("Latitude (deg)", 0)
+                mapped_item["Longitude (deg)"] = item.get("Longitude (deg)", 0)
+                mapped_item["ICAO Address (hex)"] = item.get("Aircraft Address", "")
+                mapped_item["Time (s since midnight)"] = time_value
+                mapped_item["UTC Time (HH:MM:SS)"] = item.get("Time String", "")
+                mapped_item["Mode-3/A Code"] = item.get("Mode-3/A Code", "")
+                mapped_item["Flight Level (FL)"] = item.get("Flight Level (FL)", 0)
+                mapped_item["Altitude (ft)"] = item.get("Altitude (ft)", 0)
+                mapped_item["Altitude (m)"] = item.get("Altitude (m)", 0)
+                mapped_item["Target Identification"] = item.get(
+                    "Aircraft Identification", ""
+                )
+                mapped_item["IAS (kt)"] = item.get("IAS (kt)", 0)
+                mapped_item["Mach"] = item.get("Mach", 0)
+                mapped_item["Magnetic Heading (deg)"] = item.get(
+                    "Magnetic Heading (deg)", 0
+                )
+                mapped_item["Target Status VFI"] = ""
+                mapped_item["Target Status RAB"] = (
+                    "RAB set" if item.get("RAB", False) else "RAB not set"
+                )
+                mapped_item["Target Status GBS"] = ""
+                mapped_item["Target Status NRM"] = ""
+                mapped_item["Ground Speed (kts)"] = item.get("Ground Speed (kts)", 0)
+                mapped_item["Track Angle (deg)"] = item.get("Theta (deg)", 0)
+                mapped_item["STAT (CAT48)"] = item.get("STAT", "")
+
+                decoded.append(mapped_item)
+        except ImportError as e:
+            print(
+                f"Warning: Rust decoder not available ({e}), falling back to Python decoder"
+            )
+            decoder = Decoder()
+            coords_radar = CoordinatesWGS84(radar_lat, radar_lon, radar_alt)
+            decoded = decoder.load(
+                data_file,
+                parallel,
+                max_messages=max_messages,
+                radar_coords=coords_radar,
+            )
+        except Exception as e:
+            print(f"Error using Rust decoder ({e}), falling back to Python decoder")
+            decoder = Decoder()
+            coords_radar = CoordinatesWGS84(radar_lat, radar_lon, radar_alt)
+            decoded = decoder.load(
+                data_file,
+                parallel,
+                max_messages=max_messages,
+                radar_coords=coords_radar,
+            )
+    else:  # Python
+        decoder = Decoder()
+        coords_radar = CoordinatesWGS84(radar_lat, radar_lon, radar_alt)
+
+        decoded = decoder.load(
+            data_file, parallel, max_messages=max_messages, radar_coords=coords_radar
+        )
     df = pd.DataFrame(decoded).reindex(columns=ALL_EXPECTED_COLUMNS)
     df = df.dropna(subset=["Time (s since midnight)"])
     df = (
@@ -233,6 +322,16 @@ class LoadingScreen:
         self.data_file = DEFAULT_DATA
         self.max_messages = 100000
         self.load_all = False
+        self.decoder_choice = "Python"
+
+        # Check if Rust decoder is available
+        try:
+            import decoderrs
+
+            self.decoder_options = ["Python", "Rust"]
+        except ImportError:
+            self.decoder_options = ["Python"]
+            print("Warning: Rust decoder not available, only Python option shown")
 
     def _file_dialog_callback(self, sender, app_data):
         self.data_file = app_data["file_path_name"]
@@ -244,14 +343,33 @@ class LoadingScreen:
         dpg.configure_item("load_button", show=False)
         dpg.configure_item("loading_text", show=True)
 
-        df = load_messages(self.data_file, max_messages=max_messages)
+        # Start loading in a separate thread to prevent GUI hanging
+        def load_in_thread():
+            try:
+                df = load_messages(
+                    self.data_file,
+                    max_messages=max_messages,
+                    decoder_choice=self.decoder_choice,
+                )
 
-        dashboard = Dashboard(df)
-        self.main_controller.set_dashboard(dashboard)
-        dashboard.create_ui()
+                # Schedule UI updates to run on the main thread
+                dpg.configure_item("loading_text", label="Creating dashboard...")
 
-        dpg.delete_item("Loading Window")
-        dpg.set_primary_window("Primary Window", True)
+                dashboard = Dashboard(df)
+                self.main_controller.set_dashboard(dashboard)
+                dashboard.create_ui()
+
+                dpg.delete_item("Loading Window")
+                dpg.set_primary_window("Primary Window", True)
+            except Exception as e:
+                dpg.configure_item("loading_text", label=f"Error: {str(e)}")
+                # Show the load button again so user can retry
+                dpg.configure_item("load_button", show=True)
+                dpg.configure_item("loading_text", show=False)
+
+        # Start the loading thread
+        loading_thread = threading.Thread(target=load_in_thread, daemon=True)
+        loading_thread.start()
 
     def _toggle_load_all(self, sender, app_data):
         self.load_all = app_data
@@ -269,7 +387,7 @@ class LoadingScreen:
             dpg.add_file_extension(".*")
             dpg.add_file_extension(".ast")
 
-        with dpg.window(label="Loading", tag="Loading Window", width=400, height=200):
+        with dpg.window(label="Loading", tag="Loading Window", width=400, height=250):
             dpg.add_text("Select ASTERIX data file:")
             with dpg.group(horizontal=True):
                 dpg.add_text(self.data_file, tag="data_file_text")
@@ -279,6 +397,13 @@ class LoadingScreen:
                 )
 
             dpg.add_spacer()
+
+            dpg.add_combo(
+                items=self.decoder_options,
+                label="Decoder",
+                default_value=self.decoder_choice,
+                callback=lambda s, a: setattr(self, "decoder_choice", a),
+            )
 
             dpg.add_input_int(
                 label="Max Messages",
