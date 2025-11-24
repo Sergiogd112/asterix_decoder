@@ -110,9 +110,10 @@ jobs:
 
     - name: Verify executable exists (Windows)
       if: matrix.os == 'windows-latest'
+      shell: powershell
       run: |
-        ls -la dist/asterix_dashboard.exe
-        file dist/asterix_dashboard.exe
+        Get-ChildItem dist/asterix_dashboard.exe
+        Get-FileHash dist/asterix_dashboard.exe
 
     - name: Verify executable exists (macOS)
       if: matrix.os == 'macos-latest'
