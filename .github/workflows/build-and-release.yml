@@ -67,17 +67,21 @@ jobs:
       run: |
         uv venv
         uv pip install -e .
-        # Build Rust decoder for the target platform
-        cd decoderrs
-        cargo build --release --target ${{ matrix.rust_target }} || {
-          echo "Rust build failed, continuing without Rust decoder..."
-          cd ..
-        }
-        # Install the built Rust decoder (if build succeeded)
-        if [ -f "target/${{ matrix.rust_target }}/release/libdecoderrs.so" ] || [ -f "target/${{ matrix.rust_target }}/release/libdecoderrs.dylib" ] || [ -f "target/${{ matrix.rust_target }}/release/decoderrs.dll" ]; then
-          uv run maturin develop --release --target ${{ matrix.rust_target }}
+        # Build Rust decoder for the target platform (skip macOS for now due to linking issues)
+        if [ "${{ matrix.os }}" != "macos-latest" ]; then
+          cd decoderrs
+          cargo build --release --target ${{ matrix.rust_target }} || {
+            echo "Rust build failed, continuing without Rust decoder..."
+            cd ..
+          }
+          # Install the built Rust decoder (if build succeeded)
+          if [ -f "target/${{ matrix.rust_target }}/release/libdecoderrs.so" ] || [ -f "target/${{ matrix.rust_target }}/release/libdecoderrs.dylib" ] || [ -f "target/${{ matrix.rust_target }}/release/decoderrs.dll" ]; then
+            uv run maturin develop --release --target ${{ matrix.rust_target }}
+          else
+            echo "Rust decoder not available, will use Python decoder fallback"
+          fi
         else
-          echo "Rust decoder not available, will use Python decoder fallback"
+          echo "Skipping Rust decoder build on macOS due to linking issues - will use Python decoder"
         fi
       shell: bash
 
