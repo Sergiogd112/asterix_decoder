@@ -5,53 +5,148 @@ use serde::Serialize;
 #[derive(Debug, Serialize, Default)]
 pub struct Cat48 {
     pub category: u8,
+    #[serde(rename = "SAC")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub sac: Option<u8>,
+    #[serde(rename = "SIC")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub sic: Option<u8>,
+    #[serde(rename = "Time of Day")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub time_of_day: Option<f64>,
+    #[serde(rename = "Time String")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub time_string: Option<String>,
+    #[serde(rename = "Target Type")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub target_type: Option<String>,
+    #[serde(rename = "Simulated")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub simulated: Option<bool>,
+    #[serde(rename = "RDP")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub rdp: Option<bool>,
+    #[serde(rename = "SPI")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub spi: Option<bool>,
+    #[serde(rename = "RAB")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub rab: Option<bool>,
+    #[serde(rename = "Test")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub test: Option<bool>,
+    #[serde(rename = "Extended Range")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub extended_range: Option<bool>,
+    #[serde(rename = "XPulse")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub xpulse: Option<bool>,
+    #[serde(rename = "Military Emergency")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub military_emergency: Option<bool>,
+    #[serde(rename = "Military Identification")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub military_identification: Option<bool>,
+    #[serde(rename = "FOE/FRI")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub foe_fri: Option<String>,
+    #[serde(rename = "ADS-B Element Populated")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub ads_b_element_populated: Option<bool>,
+    #[serde(rename = "ADS-B Value")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub ads_b_value: Option<bool>,
+    #[serde(rename = "SCN Element Populated")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub scn_element_populated: Option<bool>,
+    #[serde(rename = "SCN Value")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub scn_value: Option<bool>,
+    #[serde(rename = "PAI Element Populated")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub pai_element_populated: Option<bool>,
+    #[serde(rename = "PAI Value")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub pai_value: Option<bool>,
+    #[serde(rename = "Range (NM)")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub range_nm: Option<f64>,
+    #[serde(rename = "Range (m)")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub range_m: Option<f64>,
+    #[serde(rename = "Theta (deg)")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub theta: Option<f64>,
+    #[serde(rename = "Mode-3/A Code")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub mode3a_code: Option<String>,
+    #[serde(rename = "Flight Level (FL)")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub flight_level: Option<f64>,
+    #[serde(rename = "Altitude (ft)")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub altitude_ft: Option<f64>,
+    #[serde(rename = "Altitude (m)")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub altitude_m: Option<f64>,
+    #[serde(flatten)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub radar_plot_characteristics: Option<RadarPlotCharacteristics>,
+    #[serde(rename = "Aircraft Address")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub aircraft_address: Option<String>,
+    #[serde(rename = "Aircraft Identification")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub aircraft_id: Option<String>,
+    #[serde(flatten)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub mode_s_mb_data: Option<ModeSMBData>,
+    #[serde(rename = "Track Number")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub track_number: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub calculated_pos_in_cart: Option<(f64, f64)>,
+    #[serde(flatten)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub calc_track_vel_polar: Option<CalcTrackVelPolar>,
+    #[serde(flatten)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub track_status: Option<TrackStatus>,
+    #[serde(rename = "Communications Capability")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub com_acas_cap_fl_st_communications_capability: Option<String>,
+    #[serde(rename = "STAT")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub stat_cat48: Option<String>,
+    #[serde(rename = "SI/II")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub com_acas_cap_fl_st_si_ii: Option<String>,
+    #[serde(rename = "Mode S Specific Service Capability")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub com_acas_cap_fl_st_mode_s_specific_service_capability: Option<bool>,
+    #[serde(rename = "Altitude Reporting Capability")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub com_acas_cap_fl_st_altitude_reporting_capability: Option<bool>,
+    #[serde(rename = "Aircraft Identification Capability")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub com_acas_cap_fl_st_aircraft_identification_capability: Option<bool>,
+    #[serde(rename = "ACAS Status")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub com_acas_cap_fl_st_acas_status: Option<String>,
+    #[serde(rename = "Hybrid Surveillance")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub com_acas_cap_fl_st_hybrid_surveillance: Option<bool>,
+    #[serde(rename = "TA/RA")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub com_acas_cap_fl_st_ta_ra: Option<String>,
+    #[serde(rename = "Applicable MOPS Doc")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub com_acas_cap_fl_st_applicable_mops_doc: Option<String>,
+    #[serde(rename = "Latitude (deg)")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub latitude: Option<f64>,
+    #[serde(rename = "Longitude (deg)")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub longitude: Option<f64>,
 }
 
@@ -78,83 +173,151 @@ pub struct TargetDesc {
 
 #[derive(Debug, Serialize, Default, Clone)]
 pub struct RadarPlotCharacteristics {
+    #[serde(rename = "SSR Plot Runlength")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub ssr_plot_runlength: Option<f64>,
+    #[serde(rename = "Number of Received Replies SSR")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub number_of_received_replies_ssr: Option<u8>,
+    #[serde(rename = "Amplitude of (M)SSR Reply")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub amplitude_of_mssr_reply: Option<u8>,
+    #[serde(rename = "Primary Plot Runlength (deg)")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub primary_plot_runlength: Option<f64>,
+    #[serde(rename = "Amplitude of Primary Plot (dBm)")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub amplitude_of_primary_plot: Option<u8>,
+    #[serde(rename = "Range (PSR-SSR)")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub range_psr_ssr: Option<f64>,
+    #[serde(rename = "Azimuth (PSR-SSR)")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub azimuth_psr_ssr: Option<f64>,
 }
 
 #[derive(Debug, Serialize, Default)]
 pub struct ModeSMBData {
+    #[serde(rename = "Repetition")]
     pub repetition: u8,
+    #[serde(flatten)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub bds_4_0: Option<BDS40>,
+    #[serde(flatten)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub bds_5_0: Option<BDS50>,
+    #[serde(flatten)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub bds_6_0: Option<BDS60>,
 }
 
 #[derive(Debug, Serialize, Default)]
 pub struct BDS40 {
+    #[serde(rename = "Status MCP/FCU")]
     pub status_mcp: bool,
+    #[serde(rename = "MCP/FCU Selected Altitude")]
     pub mcp_alt: f64,
+    #[serde(rename = "Status FMS")]
     pub status_fms: bool,
+    #[serde(rename = "FMS Selected Altitude")]
     pub fms_alt: f64,
+    #[serde(rename = "Status Barometric Reference")]
     pub status_bar: bool,
+    #[serde(rename = "Barometric Pressure Setting")]
     pub bar_press: f64,
+    #[serde(rename = "Status MCP/FCU Mode")]
     pub status_mcp_mode: bool,
+    #[serde(rename = "VNAV Mode")]
     pub vnav: bool,
+    #[serde(rename = "ALT Hold Mode")]
     pub alt_hold: bool,
+    #[serde(rename = "Approach Mode")]
     pub approach: bool,
+    #[serde(rename = "Status Target Source")]
     pub status_target: bool,
+    #[serde(rename = "Target Alt Source")]
     pub target_alt_source: String,
 }
 
 #[derive(Debug, Serialize, Default)]
 pub struct BDS50 {
+    #[serde(rename = "Status Roll Angle")]
     pub status_roll: bool,
+    #[serde(rename = "Roll Angle")]
     pub roll_angle: f64,
+    #[serde(rename = "Status Track Angle")]
     pub status_track: bool,
+    #[serde(rename = "Track Angle")]
     pub track_angle: f64,
+    #[serde(rename = "Status Ground Speed")]
     pub status_gs: bool,
+    #[serde(rename = "Ground Speed (kts)")]
     pub gs: f64,
+    #[serde(rename = "Status Track Angle Rate")]
     pub status_ta_rate: bool,
+    #[serde(rename = "Track Angle Rate")]
     pub ta_rate: f64,
+    #[serde(rename = "Status TAS")]
     pub status_tas: bool,
+    #[serde(rename = "TAS")]
     pub tas: f64,
 }
 
 #[derive(Debug, Serialize, Default)]
 pub struct BDS60 {
+    #[serde(rename = "Status Magnetic Heading")]
     pub status_mag_h: bool,
+    #[serde(rename = "Magnetic Heading (deg) BDS")]
     pub mag_h: f64,
+    #[serde(rename = "Status IAS")]
     pub status_ias: bool,
+    #[serde(rename = "IAS (kt)")]
     pub ias: f64,
+    #[serde(rename = "Status Mach")]
     pub status_mach: bool,
+    #[serde(rename = "Mach")]
     pub mach: f64,
+    #[serde(rename = "Status Barometric Altitude Rate")]
     pub status_bar_rate: bool,
+    #[serde(rename = "Barometric Altitude Rate")]
     pub bar_rate: f64,
+    #[serde(rename = "Status Inertial Vertical Velocity")]
     pub status_inert_vv: bool,
+    #[serde(rename = "Inertial Vertical Velocity")]
     pub inert_vv: f64,
 }
 
 #[derive(Debug, Serialize, Default)]
 pub struct CalcTrackVelPolar {
+    #[serde(rename = "Ground Speed (kts)")]
     pub groundspeed: f64,
+    #[serde(rename = "Magnetic Heading (deg)")]
     pub heading: f64,
 }
 
 #[derive(Debug, Serialize, Default, Clone)]
 pub struct TrackStatus {
+    #[serde(rename = "ConfVTent")]
     pub conf_vtent: bool,
+    #[serde(rename = "Type of Sensor")]
     pub type_of_sensor: String,
+    #[serde(rename = "DOU")]
     pub dou: bool,
+    #[serde(rename = "Manoeuver detection Horizontal")]
     pub man_h: bool,
+    #[serde(rename = "Climbing/Descending")]
     pub climb_desc: String,
+    #[serde(rename = "End of Track")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub end_of_track: Option<bool>,
+    #[serde(rename = "Ghost")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub ghost: Option<bool>,
+    #[serde(rename = "SUP")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub sup: Option<bool>,
+    #[serde(rename = "TCC")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tcc: Option<bool>,
 }
 

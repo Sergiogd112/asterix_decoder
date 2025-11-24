@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 from rich import print
 from time import time
+import gc
 from decoder.decoder import Decoder
 from decoder.geoutils import CoordinatesWGS84
 
@@ -19,12 +20,12 @@ if __name__ == "__main__":
         radar_lon=radar_lon,
         radar_alt=radar_alt,
     )
-    print(f"Decoded {len(decoded_rust)} messages with Rust decoder")
+    print(f"Decoded {len(decoded_rust)} messages with Rust decoder in {time()-start:.2f} seconds")
     df_rust = pd.json_normalize(decoded_rust)
     df_rust.to_csv("full_rust.csv", index=False)
     print(f"Decoding time with Rust: {time()-start:.2f} seconds")
     print("Saved cat48_rust.csv")
-
+    gc.collect()
     # Decode with Python
     start=time()
     decoder = Decoder()
@@ -36,7 +37,7 @@ if __name__ == "__main__":
     )
     df_python = pd.DataFrame(decoded_python)
     # The rust implementation returns a dict, so we need to flatten the python one
-    print(f"Decoded {len(decoded_python)} messages with Python decoder")
+    print(f"Decoded {len(decoded_python)} messages with Python decoder in {time()-start:.2f} seconds")
     df_python = pd.json_normalize(df_python.to_dict('records'))
     df_python.to_csv("full_python.csv", index=False)
     print(f"Decoding time with Python: {time()-start:.2f} seconds")
