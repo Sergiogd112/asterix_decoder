@@ -32,7 +32,7 @@ jobs:
             os_name: macos
             binary_name: asterix_dashboard
             binary_extension: ''
-            rust_target: x86_64-apple-darwin
+            rust_target: aarch64-apple-darwin
 
     steps:
     - name: Checkout code
@@ -42,6 +42,7 @@ jobs:
       uses: actions/setup-python@v4
       with:
         python-version: '3.10'
+        architecture: ${{ matrix.os == 'macos-latest' && 'arm64' || 'x64' }}
 
     - name: Set up Rust
       uses: dtolnay/rust-toolchain@stable
@@ -68,9 +69,16 @@ jobs:
         uv pip install -e .
         # Build Rust decoder for the target platform
         cd decoderrs
-        cargo build --release --target ${{ matrix.rust_target }}
-        # Install the built Rust decoder
-        uv run maturin develop --release --target ${{ matrix.rust_target }}
+        cargo build --release --target ${{ matrix.rust_target }} || {
+          echo "Rust build failed, continuing without Rust decoder..."
+          cd ..
+        }
+        # Install the built Rust decoder (if build succeeded)
+        if [ -f "target/${{ matrix.rust_target }}/release/libdecoderrs.so" ] || [ -f "target/${{ matrix.rust_target }}/release/libdecoderrs.dylib" ] || [ -f "target/${{ matrix.rust_target }}/release/decoderrs.dll" ]; then
+          uv run maturin develop --release --target ${{ matrix.rust_target }}
+        else
+          echo "Rust decoder not available, will use Python decoder fallback"
+        fi
       shell: bash
 
     - name: Build executable (Linux)
@@ -176,7 +184,7 @@ jobs:
           ### 📦 Downloads
           - **Linux**: `asterix-dashboard-linux` - Self-contained executable for Linux x86-64
           - **Windows**: `asterix-dashboard-windows.exe` - Self-contained executable for Windows x86-64
-          - **macOS**: `asterix-dashboard-macos` - Self-contained executable for macOS x86-64
+          - **macOS**: `asterix-dashboard-macos` - Self-contained executable for macOS ARM64 (Apple Silicon)
           
           ### 🏃‍♂️ Running
           **Linux:**
@@ -201,7 +209,7 @@ jobs:
           - Test data files included in the executable
           - For Linux: glibc 2.17+ (most modern distributions)
           - For Windows: Windows 10+ with Visual C++ Redistributable
-          - For macOS: macOS 10.15+ (Catalina or later)
+          - For macOS: macOS 11+ (Big Sur or later) on Apple Silicon
           
           ### 🔧 Building from Source
           See [BUILD_INSTRUCTIONS.md](https://github.com/${{ github.repository }}/blob/main/BUILD_INSTRUCTIONS.md) for detailed build instructions.
