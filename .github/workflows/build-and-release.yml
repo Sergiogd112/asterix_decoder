@@ -98,20 +98,23 @@ jobs:
         uv run python -m PyInstaller asterix_dashboard.spec
         chmod +x dist/asterix_dashboard
 
-    - name: Test executable (Linux)
+    - name: Verify executable exists (Linux)
       if: matrix.os == 'ubuntu-latest'
       run: |
-        ./dist/asterix_dashboard --help || echo "Executable test completed"
+        ls -la dist/asterix_dashboard
+        file dist/asterix_dashboard
 
-    - name: Test executable (Windows)
+    - name: Verify executable exists (Windows)
       if: matrix.os == 'windows-latest'
       run: |
-        ./dist/asterix_dashboard.exe --help || echo "Executable test completed"
+        ls -la dist/asterix_dashboard.exe
+        file dist/asterix_dashboard.exe
 
-    - name: Test executable (macOS)
+    - name: Verify executable exists (macOS)
       if: matrix.os == 'macos-latest'
       run: |
-        ./dist/asterix_dashboard --help || echo "Executable test completed"
+        ls -la dist/asterix_dashboard
+        file dist/asterix_dashboard
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
