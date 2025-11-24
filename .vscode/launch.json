@@ -4,13 +4,17 @@
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
-
+        
         {
             "name": "Python Debugger: Module",
             "type": "debugpy",
             "request": "launch",
             "module": "decoder",
-            "args": ["--test-radar","--parallel","--max-messages","10000"]
+            "args": [
+                "--test-radar",
+                "--max-messages",
+                "1"
+            ]
         },
         {
             "name": "Python: Run Tests (with Rust Build)",
@@ -19,6 +23,44 @@
             "program": "${workspaceFolder}/test.py",
             "console": "integratedTerminal",
             "preLaunchTask": "Build Rust Decoder"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug decoderrs main.rs",
+            "preRunCommands": "pwd",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=main"
+                ],
+                "filter": {
+                    "name": "main",
+                    "kind": "bin"
+                }
+            },
+            "args": ["--test-radar", "--max-messages", "1"],
+            "cwd": "${workspaceFolder}/decoderrs",
+            
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug decoderrs (release)",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=main",
+                    "--release"
+                ],
+                "filter": {
+                    "name": "main",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}/decoderrs"
         }
+
     ]
 }

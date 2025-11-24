@@ -328,7 +328,7 @@ def decode_BDS_6_0(data, pos):
     if len(data) - pos < 56:
         raise ValueError("Data length must be at least 56 bits for BDS 6,0")
     status_mag_h = data[pos]
-    mag_h = data[pos + 1 : pos + 12].int * (90 / 512)
+    mag_h = data[pos + 1 : pos + 12].int * (90.0 / 512.0)
     status_ias = data[pos + 12]
     ias = data[pos + 13 : pos + 23].uint * 1.0
     status_mach = data[pos + 23]
@@ -339,7 +339,7 @@ def decode_BDS_6_0(data, pos):
     inert_vv = data[pos + 46 : pos + 56].int * 32.0
     bds_6_0 = {
         "Status Magnetic Heading": bool(status_mag_h),
-        "Magnetic Heading (deg)": mag_h,
+        "Magnetic Heading (deg) BDS": mag_h,
         "Status IAS": bool(status_ias),
         "IAS (kt)": ias,
         "Status Mach": bool(status_mach),
@@ -590,27 +590,27 @@ def decode_com_acas_cap_fl_st(data, pos):
 
 
 mapper = [
-    decode_dsi,
-    decode_time_of_day,
-    decode_target_desc,
-    decode_measure_position_slant_polar,
-    decode_mode3a_octal,
-    decode_fl_binary,
-    decode_radar_plot_characteristics,
-    decode_aircraft_address,
-    decode_aircraft_id,
-    decode_mode_s_mb_data,
-    decode_track_number,
-    decode_calculated_pos_in_cart,
-    decode_calc_track_vel_polar,
-    decode_track_status,
-    decode_track_quality,
-    decode_warning_error,
-    decode_mode_3a_code_conf,
-    decode_mode_c_code_conf,
-    decode_height_3d_radar,
-    decode_radial_doppler_speed,
-    decode_com_acas_cap_fl_st,
+    decode_dsi, # 0
+    decode_time_of_day, # 1
+    decode_target_desc, # 2
+    decode_measure_position_slant_polar, # 3
+    decode_mode3a_octal, # 4
+    decode_fl_binary, # 5
+    decode_radar_plot_characteristics, # 6
+    decode_aircraft_address, # 7
+    decode_aircraft_id, # 8
+    decode_mode_s_mb_data, # 9
+    decode_track_number, # 10
+    decode_calculated_pos_in_cart, # 11
+    decode_calc_track_vel_polar, # 12
+    decode_track_status, # 13
+    decode_track_quality, # 14
+    decode_warning_error, # 15
+    decode_mode_3a_code_conf, # 16
+    decode_mode_c_code_conf, # 17
+    decode_height_3d_radar, # 18
+    decode_radial_doppler_speed, # 19
+    decode_com_acas_cap_fl_st, # 20
 ]
 
 

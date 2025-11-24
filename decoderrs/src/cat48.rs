@@ -237,7 +237,7 @@ fn decode_target_desc(data: &BitSlice<u8, Msb0>) -> (TargetDesc, usize) {
     target_desc.scn_value = Some((octet3 >> 4) & 0x1 != 0);
     target_desc.pai_element_populated = Some((octet3 >> 3) & 0x1 != 0);
     target_desc.pai_value = Some((octet3 >> 2) & 0x1 != 0);
-    pos += 8;
+    // pos += 8; // Not needed as we return 24 bits total
 
     (target_desc, 24)
 }
@@ -288,8 +288,8 @@ fn decode_track_number(data: &BitSlice<u8, Msb0>) -> (u16, usize) {
 }
 
 fn decode_calc_track_vel_polar(data: &BitSlice<u8, Msb0>) -> (CalcTrackVelPolar, usize) {
-    let groundspeed = data[0..16].load::<u16>() as f64 * 0.22;
-    let heading = data[16..32].load::<u16>() as f64 * (360.0 / 65536.0);
+    let groundspeed = data[0..16].load_be::<u16>() as f64 * 0.22;
+    let heading = data[16..32].load_be::<u16>() as f64 * (360.0 / 65536.0);
     (
         CalcTrackVelPolar {
             groundspeed,
@@ -382,7 +382,7 @@ fn decode_bds_4_0(data: &BitSlice<u8, Msb0>) -> (BDS40, usize) {
     let approach = data[50];
     let status_target = data[53];
     let target_alt_idx = data[54..56].load_be::<u16>() as usize;
-    
+
     let target_alt_source = match target_alt_idx {
         0 => "Unknown",
         1 => "Aircraft Altitude",
@@ -412,15 +412,27 @@ fn decode_bds_4_0(data: &BitSlice<u8, Msb0>) -> (BDS40, usize) {
 fn decode_bds_5_0(data: &BitSlice<u8, Msb0>) -> (BDS50, usize) {
     let status_roll = data[0];
     let roll_angle_raw = data[1..11].load_be::<u16>();
-    let roll_angle = if roll_angle_raw >= 1024 { (roll_angle_raw as i32 - 2048) as f64 } else { roll_angle_raw as f64 } * (45.0 / 256.0);
+    let roll_angle = if roll_angle_raw >= 1024 {
+        (roll_angle_raw as i32 - 2048) as f64
+    } else {
+        roll_angle_raw as f64
+    } * (45.0 / 256.0);
     let status_track = data[11];
     let track_angle_raw = data[12..23].load_be::<u16>();
-    let track_angle = if track_angle_raw >= 1024 { (track_angle_raw as i32 - 2048) as f64 } else { track_angle_raw as f64 } * (90.0 / 512.0);
+    let track_angle = if track_angle_raw >= 1024 {
+        (track_angle_raw as i32 - 2048) as f64
+    } else {
+        track_angle_raw as f64
+    } * (90.0 / 512.0);
     let status_gs = data[23];
     let gs = data[24..34].load_be::<u16>() as f64 * 2.0;
     let status_ta_rate = data[34];
     let ta_rate_raw = data[35..45].load_be::<u16>();
-    let ta_rate = if ta_rate_raw >= 1024 { (ta_rate_raw as i32 - 2048) as f64 } else { ta_rate_raw as f64 } * (8.0 / 256.0);
+    let ta_rate = if ta_rate_raw >= 1024 {
+        (ta_rate_raw as i32 - 2048) as f64
+    } else {
+        ta_rate_raw as f64
+    } * (8.0 / 256.0);
     let status_tas = data[45];
     let tas = data[46..56].load_be::<u16>() as f64 * 2.0;
 
@@ -443,17 +455,29 @@ fn decode_bds_5_0(data: &BitSlice<u8, Msb0>) -> (BDS50, usize) {
 fn decode_bds_6_0(data: &BitSlice<u8, Msb0>) -> (BDS60, usize) {
     let status_mag_h = data[0];
     let mag_h_raw = data[1..12].load_be::<u16>();
-    let mag_h = if mag_h_raw >= 1024 { (mag_h_raw as i32 - 2048) as f64 } else { mag_h_raw as f64 } * (90.0 / 512.0);
+    let mag_h = (if mag_h_raw >= 1024 {
+        (mag_h_raw as i32 - 2048) as f64
+    } else {
+        mag_h_raw as f64
+    }) * (90.0 / 512.0);
     let status_ias = data[12];
     let ias = data[13..23].load_be::<u16>() as f64 * 1.0;
     let status_mach = data[23];
     let mach = data[24..34].load_be::<u16>() as f64 * (2.048 / 512.0);
     let status_bar_rate = data[34];
     let bar_rate_raw = data[35..45].load_be::<u16>();
-    let bar_rate = if bar_rate_raw >= 512 { (bar_rate_raw as i32 - 1024) as f64 } else { bar_rate_raw as f64 } * 32.0;
+    let bar_rate = if bar_rate_raw >= 512 {
+        (bar_rate_raw as i32 - 1024) as f64
+    } else {
+        bar_rate_raw as f64
+    } * 32.0;
     let status_inert_vv = data[45];
     let inert_vv_raw = data[46..56].load_be::<u16>();
-    let inert_vv = if inert_vv_raw >= 512 { (inert_vv_raw as i32 - 1024) as f64 } else { inert_vv_raw as f64 } * 32.0;
+    let inert_vv = if inert_vv_raw >= 512 {
+        (inert_vv_raw as i32 - 1024) as f64
+    } else {
+        inert_vv_raw as f64
+    } * 32.0;
 
     let bds_6_0 = BDS60 {
         status_mag_h,
@@ -474,26 +498,26 @@ fn decode_bds_6_0(data: &BitSlice<u8, Msb0>) -> (BDS60, usize) {
 fn decode_mode_s_mb_data(data: &BitSlice<u8, Msb0>) -> (ModeSMBData, usize) {
     let repetition = data[0..8].load::<u8>();
     let required_bits: usize = 8 + (repetition as usize) * 64; // 8 header + repetition * 64 data bits
-    
+
     if data.len() < required_bits {
         return (ModeSMBData::default(), 8); // Return default if insufficient data
     }
-    
+
     let mut mb_data = ModeSMBData {
         repetition,
         ..Default::default()
     };
-    
+
     let mut pos = 8;
     for _i in 0..repetition {
         if pos + 64 > data.len() {
             break;
         }
-        
+
         let block_start = pos;
         let bda1 = data[block_start + 56..block_start + 60].load_be::<u16>();
         let bda2 = data[block_start + 60..block_start + 64].load_be::<u16>();
-        
+
         match bda1 {
             4 => {
                 if bda2 == 0 && pos + 56 <= data.len() {
@@ -517,10 +541,10 @@ fn decode_mode_s_mb_data(data: &BitSlice<u8, Msb0>) -> (ModeSMBData, usize) {
                 // Unsupported BDS
             }
         }
-        
+
         pos += 64;
     }
-    
+
     (mb_data, required_bits)
 }
 
@@ -573,8 +597,8 @@ fn decode_com_acas_cap_fl_st(
     String,
     usize,
 ) {
-    let octet1 = data[0..8].load::<u8>();
-    let octet2 = data[8..16].load::<u8>();
+    let octet1 = data[0..8].load_be::<u8>();
+    let octet2 = data[8..16].load_be::<u8>();
 
     let comm_cap_idx = (octet1 >> 5) as usize;
     let flight_stat_idx = ((octet1 >> 2) & 0x7) as usize;
@@ -676,7 +700,7 @@ pub fn decode_cat48(data: &BitSlice<u8, Msb0>, radar_coords: Option<CoordinatesW
 
             if fx3 {
                 let fspec_block_4 = data[pos..pos + 8].to_bitvec();
-// pos += 8; // Not used - this is the last field in this structure
+                // pos += 8; // Not used - this is the last field in this structure
 
                 for i in 0..7 {
                     if fspec_block_4[i] {
@@ -792,10 +816,30 @@ pub fn decode_cat48(data: &BitSlice<u8, Msb0>, radar_coords: Option<CoordinatesW
             13 => {
                 // I048/110 Track Status
                 let (ts, bits) = decode_track_status(&data[pos..]);
-                decoded.track_status = Some(ts);
+                decoded.track_status = Some(ts.clone());
                 pos += bits;
             }
-            21 => {
+            14 => {
+                pos+=32;
+            }
+            15 => {
+                while data[pos+7] {
+    // pos += 8; // Not needed as we're at the end of the field
+                }
+            }
+            16 => {
+                pos += 16;
+            }
+            17 => {
+                pos += 32;
+            }
+            18 => {
+                pos += 16;
+            }
+            19 => {
+                pos += 16;
+            }
+            20 => {
                 // I048/220 Com/ACAS Capability and Flight Status
                 let (
                     communications_capability,

@@ -1,3 +1,4 @@
+use serde::Serialize;
 use std::env;
 use std::fs::File;
 use std::io::Read;
@@ -5,10 +6,18 @@ use std::time::Instant;
 
 use bitvec::prelude::*;
 
+mod cat21;
 mod cat48;
 mod geoutils;
 
 use geoutils::CoordinatesWGS84;
+
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+enum AsterixMessage {
+    Cat21(cat21::Cat21),
+    Cat48(cat48::Cat48),
+}
 
 fn parse_args() -> (bool, bool, bool, bool, Option<usize>) {
     let mut test_radar = false;
@@ -42,13 +51,13 @@ fn load_from_file(
     file_path: &str,
     radar_coords: CoordinatesWGS84,
     max_messages: Option<usize>,
-) -> Result<Vec<cat48::Cat48>, Box<dyn std::error::Error>> {
+) -> Result<Vec<AsterixMessage>, Box<dyn std::error::Error>> {
     let mut f = File::open(file_path)?;
     let mut buffer = Vec::new();
     f.read_to_end(&mut buffer)?;
 
     let bv = buffer.view_bits::<Msb0>();
-    let mut results: Vec<cat48::Cat48> = Vec::new();
+    let mut results: Vec<AsterixMessage> = Vec::new();
 
     let mut current_pos = 0usize;
     let total_bits = bv.len();
@@ -64,7 +73,7 @@ fn load_from_file(
 
         let cat = bv[current_pos..current_pos + 8].load_be::<u8>();
         let length_bits = &bv[current_pos + 8..current_pos + 24];
-        
+
         // Extract the 15-bit length value by interpreting as 16-bit big-endian and masking out MSB
         let length = length_bits.load_be::<u16>() & 0x7FFF;
 
@@ -80,10 +89,14 @@ fn load_from_file(
         let data_slice = &bv[current_pos + 24..data_end];
 
         match cat {
+            21 => {
+                let decoded = cat21::decode_cat21(data_slice);
+                results.push(AsterixMessage::Cat21(decoded));
+                message_count += 1;
+            }
             48 => {
                 let decoded = cat48::decode_cat48(data_slice, Some(radar_coords));
-                // println!("Decoded CAT48 message: {:#?}", decoded);
-                results.push(decoded);
+                results.push(AsterixMessage::Cat48(decoded));
                 message_count += 1;
             }
             _ => {
@@ -116,39 +129,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         height: radar_alt,
     };
 
-    let mut decoded: Vec<cat48::Cat48> = Vec::new();
+    let mut decoded_messages: Vec<AsterixMessage> = Vec::new();
 
     if test_radar {
-        let res = load_from_file(
+        decoded_messages = load_from_file(
             "../Test_Data/datos_asterix_radar.ast",
             coords_radar,
             max_messages,
         )?;
-        decoded = res;
     }
     if test_adsb {
-        let res = load_from_file(
+        decoded_messages = load_from_file(
             "../Test_Data/datos_asterix_adsb.ast",
             coords_radar,
             max_messages,
         )?;
-        decoded = res;
     }
     if test_all {
-        let res = load_from_file(
+        decoded_messages = load_from_file(
             "../Test_Data/datos_asterix_combinado.ast",
             coords_radar,
             max_messages,
         )?;
-        decoded = res;
     }
 
-    println!("Decoded {} messages", decoded.len());
+    println!("Decoded {} messages", decoded_messages.len());
     println!("Elapsed Time: {} s", start.elapsed().as_secs_f64());
 
     // Export to JSON file for now (pretty-printed)
     let out_file = File::create("decoded_from_rust.json")?;
-    serde_json::to_writer_pretty(out_file, &decoded)?;
+    serde_json::to_writer_pretty(out_file, &decoded_messages)?;
     println!("Wrote decoded messages to decoded_from_rust.json");
 
     Ok(())

@@ -5,6 +5,7 @@ use serde_json::Value;
 use std::fs::File;
 use std::io::Read;
 
+mod cat21;
 mod cat48;
 mod geoutils;
 use geoutils::CoordinatesWGS84;
@@ -42,7 +43,9 @@ fn json_to_py(py: Python, value: &Value) -> PyResult<PyObject> {
     }
 }
 
-#[pyfunction(signature = (file_path, radar_lat, radar_lon, radar_alt, max_messages=None))]
+#[pyfunction(
+    signature = (file_path, radar_lat, radar_lon, radar_alt, max_messages=None, debug_save_path=None)
+)]
 fn load(
     py: Python,
     file_path: String,
@@ -50,6 +53,7 @@ fn load(
     radar_lon: f64,
     radar_alt: f64,
     max_messages: Option<usize>,
+    debug_save_path: Option<String>,
 ) -> PyResult<PyObject> {
     let mut file = File::open(file_path)?;
     let mut buffer = Vec::new();
@@ -62,7 +66,7 @@ fn load(
     };
 
     let bv = buffer.view_bits::<Msb0>();
-    let list = PyList::empty_bound(py);
+    let mut json_results: Vec<Value> = Vec::new();
     let mut current_pos = 0;
     let total_bits = bv.len();
     let mut message_count = 0;
@@ -77,8 +81,6 @@ fn load(
         let cat = bv[current_pos..current_pos + 8].load_be::<u8>();
         let length = bv[current_pos + 8..current_pos + 24].load_be::<u16>();
 
-
-
         if length < 3 {
             break;
         }
@@ -91,24 +93,36 @@ fn load(
 
         let data_slice = &bv[current_pos + 24..data_end];
 
-        let decoded_message = match cat {
+        let json_value = match cat {
+            21 => {
+                let decoded = cat21::decode_cat21(data_slice);
+                Some(serde_json::to_value(decoded).unwrap())
+            }
             48 => {
                 let decoded = cat48::decode_cat48(data_slice, Some(radar_coords));
-                let json_value = serde_json::to_value(decoded).unwrap();
-                json_to_py(py, &json_value)?
+                Some(serde_json::to_value(decoded).unwrap())
             }
-            _ => py.None(),
+            _ => None,
         };
 
-        // Only append non-None messages to match Python behavior
-        if !decoded_message.is_none(py) {
-            list.append(decoded_message)?;
+        if let Some(value) = json_value {
+            json_results.push(value);
             message_count += 1;
-            
-
         }
 
         current_pos = data_end;
+    }
+
+    if let Some(path) = debug_save_path {
+        let out_file = File::create(path)?;
+        serde_json::to_writer_pretty(out_file, &json_results).map_err(|e| {
+            PyErr::new::<pyo3::exceptions::PyIOError, _>(format!("Failed to write debug file: {}", e))
+        })?;
+    }
+
+    let list = PyList::empty_bound(py);
+    for value in json_results {
+        list.append(json_to_py(py, &value)?)?;
     }
 
     Ok(list.to_object(py))
