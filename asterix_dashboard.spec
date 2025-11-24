@@ -16,6 +16,7 @@ a = Analysis(
         'tqdm',
         'decoder.decoder',
         'decoder.geoutils',
+        'decoderrs',
     ],
     hookspath=[],
     hooksconfig={},
