@@ -53,6 +53,7 @@ ALL_EXPECTED_COLUMNS = [
     "Target Status NRM",
     "Ground Speed (kts)",
     "Track Angle (deg)",
+    "Roll Angle",
     "STAT (CAT48)",
 ]
 
@@ -108,6 +109,7 @@ def generate_per_frame_df(df: pd.DataFrame):
                 "IAS (kt)": "first",
                 "Magnetic Heading (deg)": "first",
                 "Ground Speed (kts)": "first",
+                "Roll Angle": "first",
                 "Target Status GBS": "first",
                 "STAT (CAT48)": "first",
             }
@@ -123,7 +125,7 @@ def generate_per_frame_df(df: pd.DataFrame):
         agg["frame"] = agg["frame"].astype(int)
 
         # Interpolate each coordinate using the frame integer as x-axis
-        for col in ["Latitude (deg)", "Longitude (deg)", "Altitude (m)"]:
+        for col in ["Latitude (deg)", "Longitude (deg)", "Altitude (m)", "Roll Angle"]:
             vals = agg[col].to_numpy(dtype=float)
             # known points mask
             known = ~np.isnan(vals)
@@ -131,9 +133,14 @@ def generate_per_frame_df(df: pd.DataFrame):
                 # leave as NaN
                 interp_vals = np.full_like(vals, np.nan, dtype=float)
             elif known.sum() == 1:
-                # single known value -> propagate to all frames
-                single_val = float(vals[known][0])
-                interp_vals = np.full_like(vals, single_val, dtype=float)
+                # single known value -> only set at that specific frame, leave others as NaN
+                interp_vals = np.full_like(vals, np.nan, dtype=float)
+                # Find the frame where the single known value exists
+                known_indices = np.where(known)[0]
+                if len(known_indices) > 0:
+                    known_frame_idx = known_indices[0]
+                    # Set the value only at the known frame
+                    interp_vals[known_frame_idx] = float(vals[known][0])
             else:
                 xp = agg["frame"].to_numpy(dtype=float)[known]
                 fp = vals[known]
@@ -159,6 +166,7 @@ def generate_per_frame_df(df: pd.DataFrame):
                     "IAS (kt)",
                     "Magnetic Heading (deg)",
                     "Ground Speed (kts)",
+                    "Roll Angle",
                     "Target Status GBS",
                     "STAT (CAT48)",
                 ]
@@ -181,6 +189,7 @@ def generate_per_frame_df(df: pd.DataFrame):
                 "IAS (kt)",
                 "Magnetic Heading (deg)",
                 "Ground Speed (kts)",
+                "Roll Angle",
                 "Target Status GBS",
                 "STAT (CAT48)",
             ]
@@ -237,7 +246,7 @@ def load_messages(
                 mapped_item = {}
 
                 # Map fields with different names
-                mapped_item["Category"] = item.get("category", "")
+                mapped_item["Category"] = item.get("Category", "")
                 mapped_item["SAC"] = item.get("SAC", 0)
                 mapped_item["SIC"] = item.get("SIC", 0)
                 mapped_item["ATP Description"] = ""
@@ -257,7 +266,7 @@ def load_messages(
                 mapped_item["Altitude (ft)"] = item.get("Altitude (ft)", 0)
                 mapped_item["Altitude (m)"] = item.get("Altitude (m)", 0)
                 mapped_item["Target Identification"] = item.get(
-                    "Aircraft Identification", ""
+                    "Target Identification", ""
                 )
                 mapped_item["IAS (kt)"] = item.get("IAS (kt)", 0)
                 mapped_item["Mach"] = item.get("Mach", 0)
@@ -272,6 +281,7 @@ def load_messages(
                 mapped_item["Target Status NRM"] = ""
                 mapped_item["Ground Speed (kts)"] = item.get("Ground Speed (kts)", 0)
                 mapped_item["Track Angle (deg)"] = item.get("Theta (deg)", 0)
+                mapped_item["Roll Angle"] = item.get("Roll Angle", 0)
                 mapped_item["STAT (CAT48)"] = item.get("STAT", "")
 
                 decoded.append(mapped_item)
@@ -444,12 +454,17 @@ class Dashboard:
         return "Unknown"
 
     def __init__(self, df: pd.DataFrame):
+        print("DEBUG: Starting Dashboard.__init__")
         self.df = df
+        print("DEBUG: Applying ground status")
         self.df["Ground Status"] = self.df.apply(self.determine_ground_status, axis=1)
+        print("DEBUG: Generating per-frame DataFrame")
         self.per_frame_df = generate_per_frame_df(df)
+        print("DEBUG: Dropping NA values")
         self.per_frame_df = self.per_frame_df.dropna(
             subset=["Latitude (deg)", "Longitude (deg)"]
         )
+        print("DEBUG: NA values dropped")
 
         self.all_aircraft_keys = [
             tuple(x)
@@ -733,15 +748,57 @@ class Dashboard:
                     parent="y_axis",
                 )
 
-                # Create scatter series for each aircraft
+                # Add legend entries for categories
+                dpg.add_scatter_series(
+                    x=[1.55],
+                    y=[41.35],
+                    label="CAT21 (●)",
+                    parent="y_axis",
+                )
+                dpg.add_scatter_series(
+                    x=[1.55],
+                    y=[41.30],
+                    label="CAT48 (■)",
+                    parent="y_axis",
+                )
+                dpg.add_scatter_series(
+                    x=[1.6],
+                    y=[41.25],
+                    label="CAT48",
+                    parent="y_axis",
+                )
+
+                # Create scatter series for each aircraft with category-specific markers and colors
+                # print(
+                #     f"DEBUG: Creating {len(self.all_aircraft_keys)} aircraft series..."
+                # )
                 for aid, cat in self.all_aircraft_keys:
                     key = (aid, cat)
-                    self.aircraft_series[key] = dpg.add_scatter_series(
-                        x=[], y=[], label=f"{aid}-{cat}", parent="y_axis"
+                    print(f"DEBUG: Creating series for {aid}-{cat}")
+                    # Use different markers and colors for different categories
+                    if cat == 21:
+                        marker = dpg.mvPlotMarker_Circle
+                        color = [0, 150, 255, 255]  # Blue
+                    elif cat == 48:
+                        marker = dpg.mvPlotMarker_Square
+                        color = [255, 100, 0, 255]  # Orange
+                    else:
+                        marker = dpg.mvPlotMarker_Diamond
+                        color = [128, 128, 128, 255]  # Gray
+
+                    series = dpg.add_scatter_series(
+                        x=[],
+                        y=[],
+                        label=f"{aid}-{cat}",
+                        parent="y_axis",
                     )
+                    self.aircraft_series[key] = series
+                #     print(f"DEBUG: Created series {key} -> {series}")
+                # print(
+                #     f"DEBUG: Total aircraft series created: {len(self.aircraft_series)}"
+                # )
             with dpg.tooltip(parent="y_axis", tag="plot_tooltip"):
                 dpg.add_text("", tag="tooltip_text")
-            dpg.configure_item("plot_tooltip", show=False)
 
         with dpg.window(label="Filters", width=250, height=300, pos=[950, 50]):
             dpg.add_text("Filters")
@@ -799,12 +856,16 @@ class Dashboard:
             dpg.add_button(label="Export to CSV", callback=self._export_callback)
 
         with dpg.window(
-            label="Clicked Aircraft Info", width=250, height=150, pos=[950, 360]
+            label="Clicked Aircraft Info", width=250, height=250, pos=[950, 360]
         ):
             dpg.add_text("ID: N/A", tag="clicked_id")
             dpg.add_text("Category: N/A", tag="clicked_category")
             dpg.add_text("Altitude: N/A", tag="clicked_altitude")
             dpg.add_text("Time: N/A", tag="clicked_time")
+            dpg.add_text("IAS: N/A", tag="clicked_ias")
+            dpg.add_text("GS: N/A", tag="clicked_gs")
+            dpg.add_text("Heading: N/A", tag="clicked_heading")
+            dpg.add_text("Roll: N/A", tag="clicked_roll")
 
         with dpg.handler_registry():
             dpg.add_mouse_wheel_handler(callback=self._mouse_wheel_callback)
@@ -865,18 +926,16 @@ class Dashboard:
                     info += f"\nHeading: {closest_aircraft['Magnetic Heading (deg)']:.2f} deg"
                 if pd.notna(closest_aircraft.get("Ground Speed (kts)")):
                     info += f"\nGS: {closest_aircraft['Ground Speed (kts)']:.2f} kts"
+                if pd.notna(closest_aircraft.get("Roll Angle")):
+                    info += f"\nRoll: {closest_aircraft['Roll Angle']:.2f} deg"
                 if pd.notna(closest_aircraft.get("Target Status GBS")):
                     info += f"\nSTAT: {closest_aircraft['Target Status GBS']}"
                 if pd.notna(closest_aircraft.get("STAT (CAT48)")):
                     info += f"\nSTAT (CAT48): {closest_aircraft['STAT (CAT48)']}"
 
                 dpg.set_value("tooltip_text", info)
-                dpg.configure_item("plot_tooltip", show=True)
             else:
-                dpg.configure_item("plot_tooltip", show=False)
                 closest_aircraft = None  # Reset if not close enough
-        else:
-            dpg.configure_item("plot_tooltip", show=False)
 
         if dpg.is_item_clicked("map_plot") and closest_aircraft is not None:
             self.clicked_aircraft_key = (
@@ -891,27 +950,52 @@ class Dashboard:
                 & (frame_data["Category"] == cat)
             ]
             if not clicked_aircraft_data.empty:
+                aircraft = clicked_aircraft_data.iloc[0]
+                dpg.set_value("clicked_id", f"ID: {aircraft['Target Identification']}")
+                dpg.set_value("clicked_category", f"Category: {aircraft['Category']}")
                 dpg.set_value(
-                    "clicked_id",
-                    f"ID: {clicked_aircraft_data.iloc[0]['Target Identification']}",
+                    "clicked_altitude", f"Altitude: {aircraft['Altitude (m)']:.2f} m"
                 )
                 dpg.set_value(
-                    "clicked_category",
-                    f"Category: {clicked_aircraft_data.iloc[0]['Category']}",
+                    "clicked_time", f"Time: {aircraft['Time (s since midnight)']} s"
                 )
-                dpg.set_value(
-                    "clicked_altitude",
-                    f"Altitude: {clicked_aircraft_data.iloc[0]['Altitude (m)']:.2f} m",
-                )
-                dpg.set_value(
-                    "clicked_time",
-                    f"Time: {clicked_aircraft_data.iloc[0]['Time (s since midnight)']} s",
-                )
+
+                # Add IAS, GS, Heading, and Roll Angle
+                if pd.notna(aircraft.get("IAS (kt)")):
+                    dpg.set_value("clicked_ias", f"IAS: {aircraft['IAS (kt)']:.2f} kt")
+                else:
+                    dpg.set_value("clicked_ias", "IAS: N/A")
+
+                if pd.notna(aircraft.get("Ground Speed (kts)")):
+                    dpg.set_value(
+                        "clicked_gs", f"GS: {aircraft['Ground Speed (kts)']:.2f} kts"
+                    )
+                else:
+                    dpg.set_value("clicked_gs", "GS: N/A")
+
+                if pd.notna(aircraft.get("Magnetic Heading (deg)")):
+                    dpg.set_value(
+                        "clicked_heading",
+                        f"Heading: {aircraft['Magnetic Heading (deg)']:.2f} deg",
+                    )
+                else:
+                    dpg.set_value("clicked_heading", "Heading: N/A")
+
+                if pd.notna(aircraft.get("Roll Angle")):
+                    dpg.set_value(
+                        "clicked_roll", f"Roll: {aircraft['Roll Angle']:.2f} deg"
+                    )
+                else:
+                    dpg.set_value("clicked_roll", "Roll: N/A")
             else:
                 dpg.set_value("clicked_id", f"ID: {aid} (out of frame)")
                 dpg.set_value("clicked_category", f"Category: {cat} (out of frame)")
                 dpg.set_value("clicked_altitude", "Altitude: N/A")
                 dpg.set_value("clicked_time", "Time: N/A")
+                dpg.set_value("clicked_ias", "IAS: N/A")
+                dpg.set_value("clicked_gs", "GS: N/A")
+                dpg.set_value("clicked_heading", "Heading: N/A")
+                dpg.set_value("clicked_roll", "Roll: N/A")
 
 
 class MainController:
