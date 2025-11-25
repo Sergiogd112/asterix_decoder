@@ -84,6 +84,7 @@ def skip_repetitive_mode_s_mb(data: bitstring.BitArray):
 
 
 def decode_data_source_id(data: bitstring.BitArray):
+    """Decodifica SAC/SIC del encabezado del mensaje."""
     if len(data) < 16:
         raise ValueError("Datos insuficientes para Data Source ID.")
     sac = data[0:8].uint
@@ -92,6 +93,7 @@ def decode_data_source_id(data: bitstring.BitArray):
 
 
 def decode_target_report_descriptor(data: bitstring.BitArray):
+    """Obtiene ATP/ARC/RC/RAB y bits GBS de la descriptor FRN 2."""
     if len(data) < 8:
         raise ValueError("Datos insuficientes para Target Report Descriptor.")
     val = data[0:8].uint
@@ -138,6 +140,7 @@ def decode_target_report_descriptor(data: bitstring.BitArray):
 
 
 def decode_wgs84_coords_high_res(data: bitstring.BitArray):
+    """Convierte coordenadas WGS-84 de 32 bits en grados lat/lon."""
     if len(data) < 64:
         raise ValueError("Datos insuficientes para coordenadas de alta resolución.")
     lat_raw = data[0:32].int
@@ -149,6 +152,7 @@ def decode_wgs84_coords_high_res(data: bitstring.BitArray):
 
 
 def decode_target_address(data: bitstring.BitArray):
+    """Lee la dirección ICAO de 24 bits y la devuelve en hexadecimal."""
     if len(data) < 24:
         raise ValueError("Datos insuficientes para Target Address.")
     addr = data[0:24].uint
@@ -156,6 +160,7 @@ def decode_target_address(data: bitstring.BitArray):
 
 
 def decode_time_of_reception_position(data: bitstring.BitArray):
+    """Convierte un sello temporal de 24 bits en segundos y string HH:MM:SS."""
     if len(data) < 24:
         raise ValueError("Datos insuficientes para Time of Reception Position.")
     time_val = data[0:24].uint / 128.0
@@ -169,6 +174,7 @@ def decode_time_of_reception_position(data: bitstring.BitArray):
 
 
 def decode_mode3a_code(data: bitstring.BitArray):
+    """Decodifica el código intermitente Mode 3/A en formato ABCD."""
     if len(data) < 16:
         raise ValueError("Datos insuficientes para Mode 3/A Code.")
     val = data[0:16].uint
@@ -181,6 +187,7 @@ def decode_mode3a_code(data: bitstring.BitArray):
 
 
 def decode_flight_level(data: bitstring.BitArray):
+    """Calcula Flight Level y altitudes barométricas derivadas."""
     if len(data) < 16:
         raise ValueError("Datos insuficientes para Flight Level.")
     fl_raw = data[0:16].int
@@ -197,6 +204,7 @@ def decode_flight_level(data: bitstring.BitArray):
 
 
 def decode_air_speed(data: bitstring.BitArray):
+    """Interpreta IAS/Mach y devuelve la unidad adecuada."""
     if len(data) < 16:
         raise ValueError("Datos insuficientes para Air Speed.")
 
@@ -219,6 +227,7 @@ def decode_air_speed(data: bitstring.BitArray):
 
 
 def decode_magnetic_heading(data: bitstring.BitArray):
+    """Convierte el heading magnético codificado en grados."""
     if len(data) < 16:
         raise ValueError("Datos insuficientes para Magnetic Heading.")
 
@@ -230,6 +239,7 @@ def decode_magnetic_heading(data: bitstring.BitArray):
 
 
 def decode_target_status(data: bitstring.BitArray):
+    """Mapea los bits de estado (VFI/RAB/GBS/NRM) a cadenas legibles."""
     if len(data) < 8:
         raise ValueError("Datos insuficientes para Target Status.")
 
@@ -267,6 +277,7 @@ def decode_target_status(data: bitstring.BitArray):
 
 
 def decode_airborne_ground_vector(data: bitstring.BitArray):
+    """Obtiene velocidad/rumbo en tierra desde FRN 26."""
     if len(data) < 32:
         raise ValueError("Datos insuficientes para Airborne Ground Vector.")
 
@@ -291,6 +302,7 @@ def decode_airborne_ground_vector(data: bitstring.BitArray):
 
 
 def decode_target_identification(data: bitstring.BitArray):
+    """Convierte el identificador de objetivo codificado en caracteres."""
     if len(data) < 48:
         raise ValueError("Datos insuficientes para Target Identification.")
     chars = ""

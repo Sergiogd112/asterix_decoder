@@ -12,6 +12,7 @@ mod geoutils;
 
 use geoutils::CoordinatesWGS84;
 
+/// Union type storing either CAT21 or CAT48 decoded payloads.
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
 enum AsterixMessage {
@@ -19,6 +20,7 @@ enum AsterixMessage {
     Cat48(cat48::Cat48),
 }
 
+/// Parse CLI flags that control which datasets to decode and optional limits.
 fn parse_args() -> (bool, bool, bool, bool, Option<usize>) {
     let mut test_radar = false;
     let mut test_adsb = false;
@@ -47,6 +49,7 @@ fn parse_args() -> (bool, bool, bool, bool, Option<usize>) {
     (test_radar, test_adsb, test_all, parallel, max_messages)
 }
 
+/// Decode every ASTERIX message in a capture file into strongly typed enums.
 fn load_from_file(
     file_path: &str,
     radar_coords: CoordinatesWGS84,
@@ -110,6 +113,7 @@ fn load_from_file(
     Ok(results)
 }
 
+/// Entry point that mirrors the Python benchmarks and writes JSON snapshots.
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (test_radar, test_adsb, test_all, _parallel, max_messages) = parse_args();
 

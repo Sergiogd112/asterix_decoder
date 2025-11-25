@@ -2,6 +2,7 @@ use crate::geoutils::*;
 use bitvec::prelude::*;
 use serde::Serialize;
 
+/// Serializable representation of CAT48 fields required by the dashboard.
 #[derive(Debug, Serialize, Default)]
 pub struct Cat48 {
     #[serde(rename = "Category")]
@@ -822,6 +823,7 @@ fn decode_com_acas_cap_fl_st(
     )
 }
 
+/// Decode a CAT48 payload into `Cat48`, optionally enriching with geodesic coords.
 pub fn decode_cat48(category: u8, data: &BitSlice<u8, Msb0>, radar_coords: Option<CoordinatesWGS84>) -> Cat48 {
     let mut decoded = Cat48 {
         category,

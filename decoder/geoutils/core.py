@@ -40,6 +40,7 @@ class GeoUtils:
         A: Optional[float] = None,
         center_projection: Optional[CoordinatesWGS84] = None,
     ):
+        """Allow overriding ellipsoid parameters and optionally set a projection center."""
         if E is not None and A is not None:
             self.E2 = E * E
             self.A = A
@@ -58,6 +59,7 @@ class GeoUtils:
     def lat_lon_string_both_2_radians(
         line: str, height: Optional[float] = None
     ) -> CoordinatesWGS84:
+        """Parse a combined lat/lon DMS string into radians, applying optional height."""
         # Delegate to full parser; keep interface stable
         res = GeoUtils.lat_lon_string_both_2_radians_full(line)
         if height is not None:
@@ -66,6 +68,7 @@ class GeoUtils:
 
     @staticmethod
     def lat_lon_string_both_2_radians_full(line: str) -> CoordinatesWGS84:
+        """Robustly parse strings like '41:23:45N 002:10:03E 30' into WGS84 coords."""
         import re
 
         pattern = r"([-+]?)([0-9]+):([0-9]+):([0-9][0-9]*\.?[0-9]+)([NS]?)\s+([-+]?)([0-9]+):([0-9]+):([0-9][0-9]*\.?[0-9]+?)([EW]?)\s*([0-9][0-9]*\.?[0-9]+?)?"
@@ -100,6 +103,7 @@ class GeoUtils:
 
     @staticmethod
     def lat_lon_2_degrees(d1: float, d2: float, d3: float, ns: int) -> float:
+        """Convert DMS components into signed decimal degrees."""
         d = d1 + d2 / 60.0 + d3 / 3600.0
         if ns == 1:
             d *= -1.0
@@ -107,16 +111,19 @@ class GeoUtils:
 
     @staticmethod
     def lat_lon_2_radians(d1: float, d2: float, d3: float, ns: int) -> float:
+        """Convert DMS components into signed radians."""
         d = GeoUtils.lat_lon_2_degrees(d1, d2, d3, ns)
         return d * GeoUtils.DEGS2RADS
 
     @staticmethod
     def lat_lon_string_2_degrees(s1: str, s2: str, s3: str, ns: int) -> float:
+        """Helper that accepts string digits and forwards to lat_lon_2_degrees."""
         d1, d2, d3 = float(s1), float(s2), float(s3)
         return GeoUtils.lat_lon_2_degrees(d1, d2, d3, ns)
 
     @staticmethod
     def degrees_2_lat_lon(d: float) -> Tuple[float, float, float, int]:
+        """Split decimal degrees into degrees/minutes/seconds plus hemisphere."""
         ns = 1 if d < 0 else 0
         if ns == 1:
             d = -d
@@ -127,11 +134,13 @@ class GeoUtils:
 
     @staticmethod
     def radians_2_lat_lon(d: float) -> Tuple[float, float, float, int]:
+        """Convert radians back to DMS components."""
         d_deg = d * GeoUtils.RADS2DEGS
         return GeoUtils.degrees_2_lat_lon(d_deg)
 
     @staticmethod
     def center_coordinates(l: List[CoordinatesWGS84]) -> Optional[CoordinatesWGS84]:
+        """Return the midpoint of a list of WGS84 coordinates."""
         if not l:
             return None
         lats = [c.lat for c in l]
@@ -146,6 +155,7 @@ class GeoUtils:
     def change_geodesic_2_geocentric(
         self, c: CoordinatesWGS84
     ) -> Optional[CoordinatesXYZ]:
+        """Convert geodetic WGS84 coordinates to earth-centered Cartesian."""
         if c is None:
             return None
         res = CoordinatesXYZ()
@@ -162,6 +172,7 @@ class GeoUtils:
     def change_geocentric_2_geodesic(
         self, c: CoordinatesXYZ
     ) -> Optional[CoordinatesWGS84]:
+        """Convert earth-centered Cartesian coordinates back to WGS84."""
         if c is None:
             return None
         res = CoordinatesWGS84()
@@ -202,6 +213,7 @@ class GeoUtils:
         return res
 
     def set_center_projection(self, c: CoordinatesWGS84) -> Optional[CoordinatesWGS84]:
+        """Pre-compute translation/rotation matrices for a new stereographic center."""
         if c is None:
             return None
         c2 = CoordinatesWGS84(c.lat, c.lon, 0.0)
@@ -213,11 +225,13 @@ class GeoUtils:
         return self.center_projection
 
     def get_center_projection(self) -> Optional[CoordinatesWGS84]:
+        """Return the coordinate currently used as stereographic center."""
         return self.center_projection
 
     def change_geocentric_2_system_cartesian(
         self, geo: CoordinatesXYZ
     ) -> Optional[CoordinatesXYZ]:
+        """Convert global Cartesian coordinates into the projection's local frame."""
         if (
             self.center_projection is None
             or self.R1 is None
@@ -236,6 +250,7 @@ class GeoUtils:
     def change_system_cartesian_2_geocentric(
         self, car: CoordinatesXYZ
     ) -> Optional[CoordinatesXYZ]:
+        """Convert local system Cartesian coordinates back to earth-centered."""
         if car is None:
             return None
         input_arr = np.array([[car.x], [car.y], [car.z]])
@@ -247,6 +262,7 @@ class GeoUtils:
         )
 
     def change_system_xyh_2_system_z(self, c: CoordinatesXYH) -> float:
+        """Recover Z from XYH stereographic coordinates."""
         if c is None:
             return 0.0
         xh = c.x / (self.R_S + c.height)
@@ -262,6 +278,7 @@ class GeoUtils:
     def change_system_cartesian_2_stereographic(
         self, c: CoordinatesXYZ
     ) -> Optional[CoordinatesUVH]:
+        """Project local Cartesian coordinates to stereographic UVH."""
         if c is None:
             return None
         res = CoordinatesUVH()
@@ -278,6 +295,7 @@ class GeoUtils:
     def change_stereographic_2_system_cartesian(
         self, c: CoordinatesUVH
     ) -> Optional[CoordinatesXYZ]:
+        """Convert stereographic UVH coordinates back to local Cartesian."""
         if c is None:
             return None
         res = CoordinatesXYZ()
@@ -298,6 +316,7 @@ class GeoUtils:
     def calculate_elevation(
         center_coordinates: CoordinatesWGS84, R: float, rho: float, h: float
     ) -> float:
+        """Solve for elevation angle from spherical geometry inputs."""
         if rho < GeoUtils.ALMOST_ZERO or R == -1.0 or center_coordinates is None:
             return 0.0
         temp = (
@@ -312,6 +331,7 @@ class GeoUtils:
 
     @staticmethod
     def calculate_azimuth(x: float, y: float) -> float:
+        """Return an azimuth angle in radians for the provided X/Y."""
         if abs(y) < GeoUtils.ALMOST_ZERO:
             theta = (x / abs(x)) * np.pi / 2.0 if x != 0 else 0.0
         else:
@@ -321,6 +341,7 @@ class GeoUtils:
         return theta
 
     def calculate_earth_radius(self, geo: CoordinatesWGS84) -> float:
+        """Compute the radius of curvature at a given latitude."""
         if geo is None:
             return np.nan
         sin_lat = np.sin(geo.lat)
@@ -328,6 +349,7 @@ class GeoUtils:
 
     @staticmethod
     def calculate_rotation_matrix(lat: float, lon: float) -> GeneralMatrix:
+        """Build the rotation matrix that aligns ENU axes with ECEF."""
         sin_lon, cos_lon = np.sin(lon), np.cos(lon)
         sin_lat, cos_lat = np.sin(lat), np.cos(lat)
         coef_r1 = np.array(
@@ -343,6 +365,7 @@ class GeoUtils:
     def calculate_translation_matrix(
         c: CoordinatesWGS84, A: float, E2: float
     ) -> GeneralMatrix:
+        """Build the translation vector (as matrix) for the given origin."""
         sin_lat = np.sin(c.lat)
         nu = A / np.sqrt(1 - E2 * sin_lat**2)
         cos_lat, sin_lat = np.cos(c.lat), np.sin(c.lat)
@@ -360,6 +383,7 @@ class GeoUtils:
     def calculate_position_radar_matrix(
         T1: GeneralMatrix, t: GeneralMatrix, r: GeneralMatrix
     ) -> GeneralMatrix:
+        """Precompute translation for radar Cartesian systems."""
         r1 = T1 - t
         return r @ r1
 
@@ -367,6 +391,7 @@ class GeoUtils:
     def calculate_rotation_radar_matrix(
         R1: GeneralMatrix, r: GeneralMatrix
     ) -> GeneralMatrix:
+        """Precompute rotation for radar Cartesian systems."""
         r2 = R1.transpose()
         return r @ r2
 
@@ -374,6 +399,7 @@ class GeoUtils:
     def change_radar_spherical_2_radar_cartesian(
         polar_coordinates: CoordinatesPolar,
     ) -> Optional[CoordinatesXYZ]:
+        """Convert radar spherical (rho/theta/elev) into radar Cartesian XYZ."""
         if polar_coordinates is None:
             return None
         res = CoordinatesXYZ()
@@ -389,6 +415,7 @@ class GeoUtils:
     def change_radar_cartesian_2_radar_spherical(
         cartesian_coordinates: CoordinatesXYZ,
     ) -> Optional[CoordinatesPolar]:
+        """Convert radar Cartesian coordinates back into rho/theta/elevation."""
         if cartesian_coordinates is None:
             return None
         res = CoordinatesPolar()
@@ -409,6 +436,7 @@ class GeoUtils:
     def change_radar_cartesian_2_geocentric(
         self, radar_coordinates: CoordinatesWGS84, cartesian_coordinates: CoordinatesXYZ
     ) -> CoordinatesXYZ:
+        """Convert radar Cartesian coordinates into ECEF using cached transforms."""
         translation_matrix = self.obtain_translation_matrix(radar_coordinates)
         rotation_matrix = self.obtain_rotation_matrix(radar_coordinates)
         input_arr = np.array(
@@ -430,6 +458,7 @@ class GeoUtils:
         radar_coordinates: CoordinatesWGS84,
         geocentric_coordinates: CoordinatesXYZ,
     ) -> CoordinatesXYZ:
+        """Convert ECEF coordinates into radar-aligned Cartesian."""
         translation_matrix = self.obtain_translation_matrix(radar_coordinates)
         rotation_matrix = self.obtain_rotation_matrix(radar_coordinates)
         input_arr = np.array(
@@ -449,6 +478,7 @@ class GeoUtils:
     def change_radar_cartesian_2_system_cartesian(
         self, radar_coordinates: CoordinatesWGS84, cartesian_coordinates: CoordinatesXYZ
     ) -> CoordinatesXYZ:
+        """Convert radar-centric Cartesian coordinates into the stereographic system."""
         position_radar_matrix = self.obtain_position_radar_matrix(radar_coordinates)
         rotation_radar_matrix = self.obtain_rotation_radar_matrix(radar_coordinates)
         input_arr = np.array(
@@ -468,6 +498,7 @@ class GeoUtils:
     def change_system_cartesian_2_radar_cartesian(
         self, radar_coordinates: CoordinatesWGS84, cartesian_coordinates: CoordinatesXYZ
     ) -> CoordinatesXYZ:
+        """Convert stereographic system coordinates back to radar Cartesian."""
         position_radar_matrix = self.obtain_position_radar_matrix(radar_coordinates)
         rotation_radar_matrix = self.obtain_rotation_radar_matrix(radar_coordinates)
         input_arr = np.array(
@@ -487,6 +518,7 @@ class GeoUtils:
     def obtain_rotation_matrix(
         self, radar_coordinates: CoordinatesWGS84
     ) -> GeneralMatrix:
+        """Return (and cache) the ENU-to-ECEF rotation for a radar site."""
         if radar_coordinates not in self.rotation_matrix_ht:
             self.rotation_matrix_ht[radar_coordinates] = (
                 GeoUtils.calculate_rotation_matrix(
@@ -498,6 +530,7 @@ class GeoUtils:
     def obtain_translation_matrix(
         self, radar_coordinates: CoordinatesWGS84
     ) -> GeneralMatrix:
+        """Return (and cache) the translation vector for a radar site."""
         if radar_coordinates not in self.translation_matrix_ht:
             self.translation_matrix_ht[radar_coordinates] = (
                 GeoUtils.calculate_translation_matrix(
@@ -509,6 +542,7 @@ class GeoUtils:
     def obtain_position_radar_matrix(
         self, radar_coordinates: CoordinatesWGS84
     ) -> GeneralMatrix:
+        """Return cached translation from stereographic origin to radar."""
         if radar_coordinates not in self.position_radar_matrix_ht:
             t = self.obtain_translation_matrix(radar_coordinates)
             r = self.obtain_rotation_matrix(radar_coordinates)
@@ -520,6 +554,7 @@ class GeoUtils:
     def obtain_rotation_radar_matrix(
         self, radar_coordinates: CoordinatesWGS84
     ) -> GeneralMatrix:
+        """Return cached rotation from stereographic axes to radar axes."""
         if radar_coordinates not in self.rotation_radar_matrix_ht:
             r = self.obtain_rotation_matrix(radar_coordinates)
             self.rotation_radar_matrix_ht[radar_coordinates] = (

@@ -9,10 +9,14 @@ from .cat48 import decode_cat48
 
 
 class Decoder:
+    """Utility for parsing ASTERIX binary streams into CAT-specific dicts."""
+
     def __init__(self):
+        """Nothing to initialize yet; placeholder for future config."""
         pass
 
     def split_data(self, bit_data, max_messages=None):
+        """Split the raw bit array into (CAT, length, payload) tuples."""
         result = []
         current_pos = 0
         total_bits = len(bit_data)
@@ -39,6 +43,7 @@ class Decoder:
         return result
 
     def _decode_element(self, element, radar_coords=None):
+        """Decode a single ASTERIX element, delegating to CAT handlers."""
         cat, length, data = element
         if cat == 48:
             return decode_cat48(cat, length, data, radar_coords=radar_coords)
@@ -47,6 +52,7 @@ class Decoder:
         return None
 
     def load(self, file_name, parallel=True, max_messages=None, radar_coords=None):
+        """Read an ASTERIX file, split it, and decode all messages."""
         with open(file_name, "rb") as f:
             data = f.read()
         bit_data = bitstring.BitArray(data)
@@ -85,9 +91,7 @@ class Decoder:
         return results
 
     def export_to_csv(self, decoded_messages):
-        """
-        Exporta los mensajes decodificados a un archivo CSV, aplanando la estructura de datos.
-        """
+        """Export decoded messages to a flattened CSV file."""
         if not decoded_messages:
             print("[WARNING] No hay mensajes CAT21 decodificados para exportar.")
             return

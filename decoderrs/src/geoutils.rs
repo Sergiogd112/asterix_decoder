@@ -6,6 +6,7 @@ pub const A: f64 = 6378137.0;
 pub const B: f64 = 6356752.3142;
 pub const E2: f64 = 0.00669437999013;
 
+/// Latitude/longitude/height triple in radians/meters.
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct CoordinatesWGS84 {
     pub lat: f64,
@@ -13,6 +14,7 @@ pub struct CoordinatesWGS84 {
     pub height: f64,
 }
 
+/// Earth-centered, earth-fixed XYZ coordinates measured in meters.
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct CoordinatesXYZ {
     pub x: f64,
@@ -20,6 +22,7 @@ pub struct CoordinatesXYZ {
     pub z: f64,
 }
 
+/// Radar-centric spherical tuple (rho, theta, elevation).
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct CoordinatesPolar {
     pub rho: f64,
@@ -27,6 +30,7 @@ pub struct CoordinatesPolar {
     pub elevation: f64,
 }
 
+/// Convert ECEF coordinates into WGS84 latitude, longitude, and ellipsoidal height.
 pub fn change_geocentric_2_geodesic(c: &CoordinatesXYZ) -> CoordinatesWGS84 {
     let mut res = CoordinatesWGS84 {
         lat: 0.0,
@@ -67,6 +71,7 @@ pub fn change_geocentric_2_geodesic(c: &CoordinatesXYZ) -> CoordinatesWGS84 {
     res
 }
 
+/// Build the rotation matrix that maps ENU axes to ECEF at the given lat/lon.
 pub fn calculate_rotation_matrix(lat: f64, lon: f64) -> Matrix3<f64> {
     let sin_lon = lon.sin();
     let cos_lon = lon.cos();
@@ -79,6 +84,7 @@ pub fn calculate_rotation_matrix(lat: f64, lon: f64) -> Matrix3<f64> {
     )
 }
 
+/// Build the translation vector from the earth's center to the provided WGS84 point.
 pub fn calculate_translation_matrix(c: &CoordinatesWGS84) -> Vector3<f64> {
     let sin_lat = c.lat.sin();
     let nu = A / (1.0 - E2 * sin_lat.powi(2)).sqrt();
@@ -93,6 +99,7 @@ pub fn calculate_translation_matrix(c: &CoordinatesWGS84) -> Vector3<f64> {
     )
 }
 
+/// Convert radar spherical coordinates into local radar Cartesian XYZ.
 pub fn change_radar_spherical_2_radar_cartesian(polar: &CoordinatesPolar) -> CoordinatesXYZ {
     let cos_el = polar.elevation.cos();
     let sin_theta = polar.theta.sin();
@@ -104,6 +111,7 @@ pub fn change_radar_spherical_2_radar_cartesian(polar: &CoordinatesPolar) -> Coo
     }
 }
 
+/// Convert radar Cartesian coordinates into global geocentric XYZ.
 pub fn change_radar_cartesian_2_geocentric(
     radar_coordinates: &CoordinatesWGS84,
     cartesian_coordinates: &CoordinatesXYZ,

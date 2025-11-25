@@ -1,4 +1,5 @@
 def main():
+    """Simple entry point placeholder for packaging tests."""
     print("Hello from asterix-decoder!")
 
 

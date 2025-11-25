@@ -10,6 +10,7 @@ mod cat48;
 mod geoutils;
 use geoutils::CoordinatesWGS84;
 
+/// Recursively convert a serde_json `Value` into native Python objects.
 fn json_to_py(py: Python, value: &Value) -> PyResult<PyObject> {
     match value {
         Value::Null => Ok(py.None()),
@@ -43,6 +44,7 @@ fn json_to_py(py: Python, value: &Value) -> PyResult<PyObject> {
     }
 }
 
+/// Decode an ASTERIX capture file using the Rust pipelines and return Python objects.
 #[pyfunction(
     signature = (file_path, radar_lat, radar_lon, radar_alt, max_messages=None, debug_save_path=None)
 )]

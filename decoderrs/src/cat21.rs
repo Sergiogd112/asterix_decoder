@@ -1,6 +1,7 @@
 use bitvec::prelude::*;
 use serde::Serialize;
 
+/// Serializable representation of the CAT21 fields consumed by the dashboard.
 #[derive(Debug, Serialize, Default)]
 pub struct Cat21 {
     #[serde(rename = "Category")]
@@ -295,6 +296,7 @@ fn skip_repetitive_mode_s_mb(data: &BitSlice<u8, Msb0>) -> usize {
     8 + (rep as usize) * 8 * 8 // 1 octeto REP + N * 8 octetos
 }
 
+/// Decode a CAT21 payload (excluding CAT/LEN header) into strongly typed fields.
 pub fn decode_cat21(category: u8, data: &BitSlice<u8, Msb0>) -> Cat21 {
     let mut decoded = Cat21 {
         category,

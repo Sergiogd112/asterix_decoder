@@ -62,6 +62,17 @@ ALL_EXPECTED_COLUMNS = [
 
 
 def generate_per_frame_df(df: pd.DataFrame):
+    """Interpolate sparse aircraft telemetry into per-frame samples.
+
+    Args:
+        df: Raw decoded ASTERIX records containing positional fields.
+
+    Returns:
+        DataFrame where each aircraft/category pair has a contiguous
+        frame timeline with interpolated latitude, longitude, altitude,
+        and motion attributes. The frame column is used later for
+        playback and filtering.
+    """
     before_missing_count = df["Altitude (m)"].isna().sum()
     before_missing_mask = df["Altitude (m)"].isna()
 
@@ -213,12 +224,18 @@ def generate_per_frame_df(df: pd.DataFrame):
 def load_messages(
     data_file: str, parallel: bool = True, max_messages=None, decoder_choice="Python"
 ):
-    """Load ASTERIX messages using the project's Decoder and return a
-    normalized pandas.DataFrame containing lat/lon and relevant fields.
+    """Decode ASTERIX data and normalize it for dashboard consumption.
 
-    We attempt to use a numeric timestamp if present (CAT21 provides
-    "Time (s since midnight)"). When not present we fall back to the
-    message index to produce animation frames.
+    Args:
+        data_file: Path to the .ast capture file.
+        parallel: Whether to fan out CAT decoding across processes.
+        max_messages: Optional hard cap to accelerate debugging.
+        decoder_choice: "Python" for local decoder, "Rust" for FFI path.
+
+    Returns:
+        DataFrame containing the superset of columns expected by the UI
+        filtered to a geographic bounding box and enriched with a frame
+        index derived from the numeric timestamp.
     """
     radar_lat = (41 + 18 / 60.0 + 2.5184 / 3600.0) * np.pi / 180
     radar_lon = (2 + 6 / 60.0 + 7.4095 / 3600.0) * np.pi / 180
@@ -303,7 +320,10 @@ def load_messages(
 
 
 class LoadingScreen:
+    """Collects user input and asynchronously bootstraps the dashboard."""
+
     def __init__(self, main_controller):
+        """Initialize default UI values and keep a MainController handle."""
         self.main_controller = main_controller
         self.data_file = DEFAULT_DATA
         self.max_messages = 100000
@@ -313,10 +333,12 @@ class LoadingScreen:
         self.decoder_options = ["Python", "Rust"]
 
     def _file_dialog_callback(self, sender, app_data):
+        """Update the selected file path when the picker resolves."""
         self.data_file = app_data["file_path_name"]
         dpg.set_value("data_file_text", self.data_file)
 
     def _load_callback(self):
+        """Kick off dataset decoding on a background thread."""
         max_messages = None if self.load_all else self.max_messages
 
         dpg.configure_item("load_button", show=False)
@@ -353,10 +375,12 @@ class LoadingScreen:
         loading_thread.start()
 
     def _toggle_load_all(self, sender, app_data):
+        """Enable/disable the max-messages input when toggling full loads."""
         self.load_all = app_data
         dpg.configure_item("max_messages_input", enabled=not self.load_all)
 
     def create_ui(self):
+        """Render the loading screen widgets, dialogs, and callbacks."""
         with dpg.file_dialog(
             directory_selector=False,
             show=False,
@@ -407,8 +431,11 @@ class LoadingScreen:
 
 
 class Dashboard:
+    """Manage DearPyGui state, filtering logic, and playback updates."""
+
     @staticmethod
     def determine_ground_status(row):
+        """Derive ground/airborne status from CAT48 STAT and CAT21 flags."""
         if pd.notna(row["STAT (CAT48)"]):
             stat = row["STAT (CAT48)"]
             is_ground = "on ground" in stat
@@ -425,6 +452,7 @@ class Dashboard:
         return "Unknown"
 
     def __init__(self, df: pd.DataFrame):
+        """Prepare filtered/per-frame datasets and GUI caches."""
         print("DEBUG: Starting Dashboard.__init__")
         self.df = df
         print("DEBUG: Applying ground status")
@@ -616,22 +644,28 @@ class Dashboard:
         self._update_plot()
 
     def _play_callback(self):
+        """Resume playback when the play button is pressed."""
         self.is_playing = True
 
     def _pause_callback(self):
+        """Pause playback when the pause button is pressed."""
         self.is_playing = False
 
     def _speed_callback(self, sender, app_data):
+        """Apply the requested frames-per-second value."""
         self.playback_speed = app_data
 
     def _frame_slider_callback(self, sender, app_data):
+        """Jump to an arbitrary frame via the slider widget."""
         self.current_frame = app_data
         self._update_plot()
 
     def _export_callback(self):
+        """Open the export dialog so the user can pick a CSV path."""
         dpg.show_item("export_dialog_id")
 
     def _save_csv_callback(self, sender, app_data):
+        """Persist the currently filtered dataset to disk."""
         # Check if a file was selected
         if "file_path_name" in app_data:
             file_path = app_data["file_path_name"]
@@ -666,6 +700,7 @@ class Dashboard:
         dpg.configure_item("export_dialog_id", show=False)
 
     def _update_plot(self):
+        """Refresh aircraft scatter/trail series for the active frame."""
         if not hasattr(self, "filtered_per_frame_df"):
             return
         frame_data = self.filtered_per_frame_df[
@@ -737,6 +772,7 @@ class Dashboard:
             dpg.set_axis_limits("y_axis", new_y_min, new_y_max)
 
     def create_ui(self):
+        """Build the primary DearPyGui windows, handlers, and plots."""
         with dpg.file_dialog(
             directory_selector=False,
             show=False,
@@ -945,6 +981,7 @@ class Dashboard:
         self.last_update_time = time.time()
 
     def update(self):
+        """Advance animation, update hover tooltips, and sync click info."""
         # Animation logic
         if self.is_playing:
             time_per_frame = 1.0 / self.playback_speed
@@ -1069,13 +1106,17 @@ class Dashboard:
 
 
 class MainController:
+    """Entry-point helper driving DearPyGui's lifecycle."""
+
     def __init__(self):
         self.dashboard = None
 
     def set_dashboard(self, dashboard):
+        """Store the active dashboard instance created by the loader."""
         self.dashboard = dashboard
 
     def run(self):
+        """Start DearPyGui, show the loader, and pump the render loop."""
         dpg.create_context()
 
         loading_screen = LoadingScreen(self)

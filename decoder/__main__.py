@@ -7,6 +7,7 @@ from .geoutils import CoordinatesWGS84
 
 
 def parse_args():
+    """Create CLI parser mirroring the Rust benchmark flags."""
     parser = argparse.ArgumentParser(description="ASTERIX decoder")
     parser.add_argument("--test-radar", action="store_true", help="Use test radar data")
     parser.add_argument("--test-adsb", action="store_true", help="Use test ADS-B data")

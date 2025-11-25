@@ -260,6 +260,7 @@ def decode_aircraft_id(data, pos):
 
 
 def decode_BDS_4_0(data, pos):
+    """Decode MCP/FMS altitude selections and baro settings (BDS 4,0)."""
     if len(data) - pos < 56:
         raise ValueError("Data length must be at least 56 bits for BDS 4,0")
     status_mcp = data[pos]
@@ -297,6 +298,7 @@ def decode_BDS_4_0(data, pos):
 
 
 def decode_BDS_5_0(data, pos):
+    """Decode roll/track/ground-speed data block (BDS 5,0)."""
     if len(data) - pos < 56:
         raise ValueError("Data length must be at least 56 bits for BDS 5,0")
     status_roll = data[pos]
@@ -325,6 +327,7 @@ def decode_BDS_5_0(data, pos):
 
 
 def decode_BDS_6_0(data, pos):
+    """Decode heading, IAS, Mach, and vertical rates (BDS 6,0)."""
     if len(data) - pos < 56:
         raise ValueError("Data length must be at least 56 bits for BDS 6,0")
     status_mag_h = data[pos]
@@ -364,6 +367,7 @@ mapper_bds = [
 
 
 def decode_mode_s_mb_data(data, pos):
+    """Parse Mode-S MB payloads and fan out to BDS-specific decoders."""
     if len(data) - pos < 72:
         raise ValueError("Data length must be at least 72 bits for Mode S MB Data")
     repetition = data[pos : pos + 8].uint
@@ -407,6 +411,7 @@ def decode_mode_s_mb_data(data, pos):
 
 
 def decode_track_number(data, pos):
+    """Extract the track number (FRN 10) from the bitstream."""
     if len(data) - pos < 16:
         raise ValueError("Data length must be at least 16 bits for Track Number")
     # print(data[pos : pos + 16].bin)
@@ -416,6 +421,7 @@ def decode_track_number(data, pos):
 
 
 def decode_calculated_pos_in_cart(data, pos):
+    """Placeholder decoder for Cartesian positions (not yet implemented)."""
     if len(data) - pos < 32:
         raise ValueError(
             "Data length must be at least 32 bits for Calculated Position in Cartesian Coordinates"
@@ -425,6 +431,7 @@ def decode_calculated_pos_in_cart(data, pos):
 
 
 def decode_calc_track_vel_polar(data, pos):
+    """Convert polar ground speed/heading into dashboard fields."""
     if len(data) - pos < 32:
         raise ValueError(
             "Data length must be at least 32 bits for Calculated Track Velocity in Polar Representation"
@@ -438,6 +445,7 @@ def decode_calc_track_vel_polar(data, pos):
 
 
 def decode_track_status(data, pos):
+    """Decode confidence, sensor type, and optional extended status bits."""
     if len(data) - pos < 8:
         raise ValueError("Data length must be at least 8 bits for Track Status")
     conf_vt = data[pos]
@@ -478,6 +486,7 @@ def decode_track_status(data, pos):
 
 
 def decode_track_quality(data, pos):
+    """Placeholder for track quality metrics (FRN 14)."""
     if len(data) - pos < 32:
         raise ValueError("Data length must be at least 32 bits for Track Quality")
     # Placeholder: original returns None
@@ -485,6 +494,7 @@ def decode_track_quality(data, pos):
 
 
 def decode_warning_error(data, pos):
+    """Read repeated warning/error codes terminated by FX bits."""
     if len(data) - pos < 8:
         raise ValueError("Data length must be at least 8 bits for Warning/Error")
     codes = []
@@ -498,6 +508,7 @@ def decode_warning_error(data, pos):
 
 
 def decode_mode_3a_code_conf(data, pos):
+    """Placeholder for Mode 3/A confidence information."""
     if len(data) - pos < 16:
         raise ValueError(
             "Data length must be at least 16 bits for Mode 3/A Code Confidence Indicator"
@@ -507,6 +518,7 @@ def decode_mode_3a_code_conf(data, pos):
 
 
 def decode_mode_c_code_conf(data, pos):
+    """Placeholder for Mode C code and confidence details."""
     if len(data) - pos < 32:
         raise ValueError(
             "Data length must be at least 32 bits for Mode C Code and Confidence Indicator"
@@ -516,6 +528,7 @@ def decode_mode_c_code_conf(data, pos):
 
 
 def decode_height_3d_radar(data, pos):
+    """Placeholder for 3D radar-derived heights."""
     if len(data) - pos < 16:
         raise ValueError(
             "Data length must be at least 16 bits for Height Measured by 3D Radar"
@@ -525,6 +538,7 @@ def decode_height_3d_radar(data, pos):
 
 
 def decode_radial_doppler_speed(data, pos):
+    """Placeholder for radial Doppler speed metrics."""
     # Original is broken: return None, 8 * data[0] + 56 * data[1] + 8 — invalid
     # Assuming fixed length or placeholder; for now, consume 16 bits or as is.
     if len(data) - pos < 16:
@@ -536,6 +550,7 @@ def decode_radial_doppler_speed(data, pos):
 
 
 def decode_com_acas_cap_fl_st(data, pos):
+    """Decode communications/ACAS capability plus flight status (FRN 20)."""
     if len(data) - pos < 16:
         raise ValueError(
             "Data length must be at least 16 bits for Communications / ACAS Capability and Flight Status"
