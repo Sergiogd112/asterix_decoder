@@ -37,12 +37,11 @@ watch_*
 
 # Benchmark and test outputs
 benchmark*.py
-debug_*.py
+
 clean_*.py
 quick_*.py
 simple_*.py
-test_*.py
-filter_*.py
+
 
 # Logs
 *.log
