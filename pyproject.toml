@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "asterix-decoder"
-version = "0.1.0"
+version = "0.1.1"
 description = "ASTERIX decoder and dashboard for aircraft tracking visualization"
 readme = "README.md"
 requires-python = ">=3.10"
