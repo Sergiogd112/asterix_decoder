@@ -165,13 +165,16 @@ class GeneralMatrix:
 
     def norm2(self) -> float:
         s = la.svdvals(self.A)
-        return s.max() if len(s) > 0 else 0.0
+        try:
+            return float(np.max(s)) if s is not None and len(s) > 0 else 0.0
+        except (TypeError, ValueError):
+            return 0.0
 
     def norm_inf(self) -> float:
         return np.sum(np.abs(self.A), axis=1).max()
 
     def norm_f(self) -> float:
-        return la.norm(self.A, "fro")
+        return float(la.norm(self.A, "fro"))
 
     def unary_minus(self) -> "GeneralMatrix":
         return GeneralMatrix(-self.A)
@@ -251,7 +254,12 @@ class GeneralMatrix:
             x = la.solve(self.A, B.A)
         else:
             # Rectangular: least squares using QR
-            x, _, _, _ = la.lstsq(self.A, B.A, rcond=None)
+            lstsq_result = la.lstsq(self.A, B.A)
+            if lstsq_result is None:
+                raise ValueError("Least squares solve failed")
+            x = lstsq_result[0] if lstsq_result else None
+            if x is None:
+                raise ValueError("Least squares solve failed")
         return GeneralMatrix(x)
 
     def solve_transpose(self, B: "GeneralMatrix") -> "GeneralMatrix":
@@ -269,14 +277,24 @@ class GeneralMatrix:
 
     def rank(self) -> int:
         s = la.svdvals(self.A)
-        tol = s.max() * max(self.A.shape) * np.finfo(s.dtype).eps if len(s) > 0 else 0
-        return int(np.sum(s > tol))
+        try:
+            s_array = np.array(s) if not isinstance(s, np.ndarray) else s
+            if s_array.size > 0:
+                tol = np.max(s_array) * max(self.A.shape) * np.finfo(s_array.dtype).eps
+                return int(np.sum(s_array > tol))
+            return 0
+        except (TypeError, ValueError):
+            return 0
 
     def condition(self) -> float:
         s = la.svdvals(self.A)
-        if len(s) == 0 or s[-1] == 0:
+        try:
+            s_array = np.array(s) if not isinstance(s, np.ndarray) else s
+            if s_array.size == 0 or s_array[-1] == 0:
+                return np.inf
+            return float(s_array[0] / s_array[-1])
+        except (TypeError, ValueError, IndexError):
             return np.inf
-        return s[0] / s[-1]
 
     def trace(self) -> float:
         return float(np.trace(self.A))

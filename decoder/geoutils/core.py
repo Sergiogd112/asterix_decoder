@@ -251,7 +251,7 @@ class GeoUtils:
         self, car: CoordinatesXYZ
     ) -> Optional[CoordinatesXYZ]:
         """Convert local system Cartesian coordinates back to earth-centered."""
-        if car is None:
+        if car is None or self.R1 is None or self.T1 is None:
             return None
         input_arr = np.array([[car.x], [car.y], [car.z]])
         input_matrix = GeneralMatrix(input_arr)
@@ -263,7 +263,7 @@ class GeoUtils:
 
     def change_system_xyh_2_system_z(self, c: CoordinatesXYH) -> float:
         """Recover Z from XYH stereographic coordinates."""
-        if c is None:
+        if c is None or self.center_projection is None:
             return 0.0
         xh = c.x / (self.R_S + c.height)
         yh = c.y / (self.R_S + c.height)
@@ -279,7 +279,7 @@ class GeoUtils:
         self, c: CoordinatesXYZ
     ) -> Optional[CoordinatesUVH]:
         """Project local Cartesian coordinates to stereographic UVH."""
-        if c is None:
+        if c is None or self.center_projection is None:
             return None
         res = CoordinatesUVH()
         d_xy2 = c.x**2 + c.y**2
@@ -296,7 +296,7 @@ class GeoUtils:
         self, c: CoordinatesUVH
     ) -> Optional[CoordinatesXYZ]:
         """Convert stereographic UVH coordinates back to local Cartesian."""
-        if c is None:
+        if c is None or self.center_projection is None:
             return None
         res = CoordinatesXYZ()
         d_uv2 = c.u**2 + c.v**2
@@ -544,6 +544,8 @@ class GeoUtils:
     ) -> GeneralMatrix:
         """Return cached translation from stereographic origin to radar."""
         if radar_coordinates not in self.position_radar_matrix_ht:
+            if self.T1 is None:
+                raise ValueError("Center projection not set")
             t = self.obtain_translation_matrix(radar_coordinates)
             r = self.obtain_rotation_matrix(radar_coordinates)
             self.position_radar_matrix_ht[radar_coordinates] = (
@@ -556,6 +558,8 @@ class GeoUtils:
     ) -> GeneralMatrix:
         """Return cached rotation from stereographic axes to radar axes."""
         if radar_coordinates not in self.rotation_radar_matrix_ht:
+            if self.R1 is None:
+                raise ValueError("Center projection not set")
             r = self.obtain_rotation_matrix(radar_coordinates)
             self.rotation_radar_matrix_ht[radar_coordinates] = (
                 GeoUtils.calculate_rotation_radar_matrix(self.R1, r)

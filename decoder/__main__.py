@@ -32,6 +32,8 @@ if __name__ == "__main__":
     radar_lon = (2 + 6 / 60.0 + 7.4095 / 3600.0) * np.pi / 180
     radar_alt = 27.25
     coords_radar = CoordinatesWGS84(radar_lat, radar_lon, radar_alt)
+    decoder = None
+    decoded = None
 
     if args.test_radar:
         decoder = Decoder()
@@ -57,8 +59,9 @@ if __name__ == "__main__":
             max_messages=args.max_messages,
             radar_coords=coords_radar,
         )
-    print(f"Decoded {len(decoded)} messages")
-    # print(decoded)
-    print(f"Elapsed Time: {time()-start} s")
-    print(decoded)
-    decoder.export_to_csv(decoded)
+    if decoded and decoder:
+        print(f"Decoded {len(decoded)} messages")
+        # print(decoded)
+        print(f"Elapsed Time: {time()-start} s")
+        print(decoded)
+        decoder.export_to_csv(decoded)

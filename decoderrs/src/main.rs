@@ -16,8 +16,8 @@ use geoutils::CoordinatesWGS84;
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
 enum AsterixMessage {
-    Cat21(cat21::Cat21),
-    Cat48(cat48::Cat48),
+    Cat21(Box<cat21::Cat21>),
+    Cat48(Box<cat48::Cat48>),
 }
 
 /// Parse CLI flags that control which datasets to decode and optional limits.
@@ -94,12 +94,12 @@ fn load_from_file(
         match cat {
             21 => {
                 let decoded = cat21::decode_cat21(cat, data_slice);
-                results.push(AsterixMessage::Cat21(decoded));
+                results.push(AsterixMessage::Cat21(Box::new(decoded)));
                 message_count += 1;
             }
             48 => {
                 let decoded = cat48::decode_cat48(cat, data_slice, Some(radar_coords));
-                results.push(AsterixMessage::Cat48(decoded));
+                results.push(AsterixMessage::Cat48(Box::new(decoded)));
                 message_count += 1;
             }
             _ => {

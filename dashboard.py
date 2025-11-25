@@ -99,8 +99,10 @@ def generate_per_frame_df(df: pd.DataFrame):
         return g
 
     # Apply per-aircraft interpolation using time as the independent variable
-    df = df.groupby(["Target Identification", "Category"], group_keys=False).apply(
-        _time_weight_interp
+    df = pd.DataFrame(
+        df.groupby(["Target Identification", "Category"], group_keys=False).apply(
+            _time_weight_interp
+        )
     )
 
     after_missing_count = df["Altitude (m)"].isna().sum()
@@ -108,8 +110,12 @@ def generate_per_frame_df(df: pd.DataFrame):
 
     # Show a few example rows that were NaN before but are now filled:
     rows = []
-    for (aid, cat), g in tqdm(df.groupby(["Target Identification", "Category"])):
-        g = g.sort_values("frame")
+    for keys, g in tqdm(df.groupby(["Target Identification", "Category"])):
+        if isinstance(keys, tuple) and len(keys) == 2:
+            aid, cat = keys
+        else:
+            continue
+        g = pd.DataFrame(g).sort_values("frame")
         minf = int(g["frame"].min())
         maxf = int(g["frame"].max())
         frames_all = np.arange(minf, maxf + 1, dtype=int)
@@ -129,7 +135,7 @@ def generate_per_frame_df(df: pd.DataFrame):
             }
         )
         # Reindex to include all frames in the span
-        agg = agg.reindex(frames_all)
+        agg = pd.DataFrame(agg).reindex(frames_all)
         agg["Target Status GBS"] = agg["Target Status GBS"].ffill()
         agg["STAT (CAT48)"] = agg["STAT (CAT48)"].ffill()
         agg = agg.reset_index()
@@ -192,21 +198,21 @@ def generate_per_frame_df(df: pd.DataFrame):
         pd.concat(rows, ignore_index=True)
         if rows
         else pd.DataFrame(
-            columns=[
-                "Category",
-                "frame",
-                "Target Identification",
-                "Time (s since midnight)",
-                "Latitude (deg)",
-                "Longitude (deg)",
-                "Altitude (m)",
-                "IAS (kt)",
-                "Magnetic Heading (deg)",
-                "Ground Speed (kts)",
-                "Roll Angle",
-                "Target Status GBS",
-                "STAT (CAT48)",
-            ]
+            {
+                "Category": [],
+                "frame": [],
+                "Target Identification": [],
+                "Time (s since midnight)": [],
+                "Latitude (deg)": [],
+                "Longitude (deg)": [],
+                "Altitude (m)": [],
+                "IAS (kt)": [],
+                "Magnetic Heading (deg)": [],
+                "Ground Speed (kts)": [],
+                "Roll Angle": [],
+                "Target Status GBS": [],
+                "STAT (CAT48)": [],
+            }
         )
     )
 
@@ -311,7 +317,7 @@ def load_messages(
     df = df.dropna(subset=["Time (s since midnight)"])
     df = (
         df.assign(frame=df["Time (s since midnight)"].astype(int))
-        .sort_values("Time (s since midnight)")
+        .sort_values(["Time (s since midnight)"])
         .query("40.9 < `Latitude (deg)` < 41.7 and 1.5 < `Longitude (deg)` < 2.6")
         .reset_index(drop=True)
     )
@@ -454,18 +460,18 @@ class Dashboard:
     def __init__(self, df: pd.DataFrame):
         """Prepare filtered/per-frame datasets and GUI caches."""
         print("DEBUG: Starting Dashboard.__init__")
-        self.df = df
+        self.df: pd.DataFrame = df
         print("DEBUG: Applying ground status")
         self.df["Ground Status"] = self.df.apply(self.determine_ground_status, axis=1)
         print("DEBUG: Generating per-frame DataFrame")
-        self.per_frame_df = generate_per_frame_df(df)
+        self.per_frame_df: pd.DataFrame = generate_per_frame_df(df)
         print("DEBUG: Dropping NA values")
         self.per_frame_df = self.per_frame_df.dropna(
             subset=["Latitude (deg)", "Longitude (deg)"]
         )
         print("DEBUG: NA values dropped")
 
-        self.all_aircraft_keys = [
+        self.all_aircraft_keys = [  # type: ignore
             tuple(x)
             for x in self.per_frame_df[["Target Identification", "Category"]]
             .drop_duplicates()
@@ -504,8 +510,8 @@ class Dashboard:
         self.categories = ["All"] + self.per_frame_df["Category"].unique().tolist()
         self.ground_statuses = ["All", "On Ground", "Airborne"]
 
-        self.filtered_per_frame_df = self.per_frame_df.copy()
-        self.filtered_df = self.df.copy()
+        self.filtered_per_frame_df: pd.DataFrame = self.per_frame_df.copy()
+        self.filtered_df: pd.DataFrame = self.df.copy()
 
     def _apply_filters(self):
         """Filters the per_frame_df based on the current filter settings."""
@@ -532,7 +538,7 @@ class Dashboard:
                     filtered_df["Category"].astype(str) == self.category_filter
                 ]
 
-        self.filtered_per_frame_df = filtered_df
+        self.filtered_per_frame_df = pd.DataFrame(filtered_df)
 
         # Filter df
         filtered_df = self.df.copy()
@@ -560,7 +566,7 @@ class Dashboard:
                 filtered_df = filtered_df[
                     filtered_df["Category"].astype(str) == self.category_filter
                 ]
-        self.filtered_df = filtered_df
+        self.filtered_df = pd.DataFrame(filtered_df)
 
     def _get_aircraft_color(self, key, cat):
         """Return a soft, distinct color per aircraft using pastel HSV hashing."""
@@ -720,10 +726,10 @@ class Dashboard:
             for key, group in trail_window.groupby(
                 ["Target Identification", "Category"]
             ):
-                group = group.sort_values("frame")
+                group_df = pd.DataFrame(group).sort_values("frame")
                 trail_dict[key] = (
-                    group["Longitude (deg)"].tolist(),
-                    group["Latitude (deg)"].tolist(),
+                    group_df["Longitude (deg)"].tolist(),
+                    group_df["Latitude (deg)"].tolist(),
                 )
 
         aircraft_in_frame = set()
@@ -935,13 +941,13 @@ class Dashboard:
             dpg.add_input_float(
                 label="Min Altitude",
                 tag="altitude_min_filter",
-                default_value=self.altitude_min_filter,
+                default_value=float(self.altitude_min_filter),
                 callback=self._filter_callback,
             )
             dpg.add_input_float(
                 label="Max Altitude",
                 tag="altitude_max_filter",
-                default_value=self.altitude_max_filter,
+                default_value=float(self.altitude_max_filter),
                 callback=self._filter_callback,
             )
             dpg.add_combo(
@@ -1020,31 +1026,45 @@ class Dashboard:
                     min_dist_sq = dist_sq
                     closest_aircraft = row
 
-            if closest_aircraft is not None and min_dist_sq < threshold_sq:
+            if (
+                closest_aircraft is not None
+                and not closest_aircraft.empty
+                and min_dist_sq < threshold_sq
+            ):
                 info = (
                     f"ID: {closest_aircraft['Target Identification']}\n"
                     f"Category: {closest_aircraft['Category']}\n"
                     f"Altitude: {closest_aircraft['Altitude (m)']:.2f} m\n"
                     f"Time: {closest_aircraft['Time (s since midnight)']} s"
                 )
-                if pd.notna(closest_aircraft.get("IAS (kt)")):
-                    info += f"\nIAS: {closest_aircraft['IAS (kt)']:.2f} kt"
-                if pd.notna(closest_aircraft.get("Magnetic Heading (deg)")):
-                    info += f"\nHeading: {closest_aircraft['Magnetic Heading (deg)']:.2f} deg"
-                if pd.notna(closest_aircraft.get("Ground Speed (kts)")):
-                    info += f"\nGS: {closest_aircraft['Ground Speed (kts)']:.2f} kts"
-                if pd.notna(closest_aircraft.get("Roll Angle")):
-                    info += f"\nRoll: {closest_aircraft['Roll Angle']:.2f} deg"
-                if pd.notna(closest_aircraft.get("Target Status GBS")):
-                    info += f"\nSTAT: {closest_aircraft['Target Status GBS']}"
-                if pd.notna(closest_aircraft.get("STAT (CAT48)")):
+                ias_value = closest_aircraft.get("IAS (kt)")
+                if ias_value is not None and pd.notna(ias_value):
+                    info += f"\nIAS: {ias_value:.2f} kt"
+                heading_value = closest_aircraft.get("Magnetic Heading (deg)")
+                if heading_value is not None and pd.notna(heading_value):
+                    info += f"\nHeading: {heading_value:.2f} deg"
+                gs_value = closest_aircraft.get("Ground Speed (kts)")
+                if gs_value is not None and pd.notna(gs_value):
+                    info += f"\nGS: {gs_value:.2f} kts"
+                roll_value = closest_aircraft.get("Roll Angle")
+                if roll_value is not None and pd.notna(roll_value):
+                    info += f"\nRoll: {roll_value:.2f} deg"
+                status_value = closest_aircraft.get("Target Status GBS")
+                if status_value is not None and pd.notna(status_value):
+                    info += f"\nSTAT: {status_value}"
+                stat48_value = closest_aircraft.get("STAT (CAT48)")
+                if stat48_value is not None and pd.notna(stat48_value):
                     info += f"\nSTAT (CAT48): {closest_aircraft['STAT (CAT48)']}"
 
                 dpg.set_value("tooltip_text", info)
             else:
                 closest_aircraft = None  # Reset if not close enough
 
-        if dpg.is_item_clicked("map_plot") and closest_aircraft is not None:
+        if (
+            dpg.is_item_clicked("map_plot")
+            and closest_aircraft is not None
+            and not closest_aircraft.empty
+        ):
             self.clicked_aircraft_key = (
                 closest_aircraft["Target Identification"],
                 closest_aircraft["Category"],
@@ -1056,8 +1076,9 @@ class Dashboard:
                 (frame_data["Target Identification"] == aid)
                 & (frame_data["Category"] == cat)
             ]
-            if not clicked_aircraft_data.empty:
-                aircraft = clicked_aircraft_data.iloc[0]
+            clicked_df = pd.DataFrame(clicked_aircraft_data)
+            if not clicked_df.empty:
+                aircraft = clicked_df.iloc[0]
                 dpg.set_value("clicked_id", f"ID: {aircraft['Target Identification']}")
                 dpg.set_value("clicked_category", f"Category: {aircraft['Category']}")
                 dpg.set_value(

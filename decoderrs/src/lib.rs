@@ -56,10 +56,15 @@ fn load(
     radar_alt: f64,
     max_messages: Option<usize>,
     debug_save_path: Option<String>,
-) -> PyResult<PyObject> {
-    let mut file = File::open(file_path)?;
+) -> PyObject {
+    let mut file = match File::open(file_path) {
+        Ok(file) => file,
+        Err(_) => return py.None(),
+    };
     let mut buffer = Vec::new();
-    file.read_to_end(&mut buffer)?;
+    if file.read_to_end(&mut buffer).is_err() {
+        return py.None();
+    }
 
     let radar_coords = CoordinatesWGS84 {
         lat: radar_lat,
@@ -116,18 +121,19 @@ fn load(
     }
 
     if let Some(path) = debug_save_path {
-        let out_file = File::create(path)?;
-        serde_json::to_writer_pretty(out_file, &json_results).map_err(|e| {
-            PyErr::new::<pyo3::exceptions::PyIOError, _>(format!("Failed to write debug file: {}", e))
-        })?;
+        if let Ok(out_file) = File::create(path) {
+            let _ = serde_json::to_writer_pretty(out_file, &json_results);
+        }
     }
 
     let list = PyList::empty_bound(py);
     for value in json_results {
-        list.append(json_to_py(py, &value)?)?;
+        if let Ok(py_value) = json_to_py(py, &value) {
+            list.append(py_value).unwrap();
+        }
     }
 
-    Ok(list.to_object(py))
+    list.to_object(py)
 }
 
 /// A Python module implemented in Rust.

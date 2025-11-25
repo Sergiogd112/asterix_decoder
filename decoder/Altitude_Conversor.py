@@ -29,7 +29,6 @@ def qnh_to_qne(qnh_hpa, elevation_ft):
 
 
 def qnh_to_qfe(qnh_hpa, airport_elevation_ft):
-
     # Calcula la caída de presión por la elevación del aeropuerto
     pressure_drop_hpa = airport_elevation_ft / 27
 
@@ -42,13 +41,12 @@ def qnh_to_qfe(qnh_hpa, airport_elevation_ft):
 def apply_qnh_correction(
     df: pd.DataFrame, bp_column_name: str, alt_column_name: str = "Altitude (ft)"
 ) -> pd.DataFrame:
-
     # Altitud real = Altitud indicada + (QNH actual - QNH estándar) * 30 ft
     # Se aplica solo por debajo de la Altitud de Transición (6000 ft).
 
     if bp_column_name not in df.columns:
         # No se encontró BP, simplemente crea la columna duplicada
-        df["Altitude_Corrected_ft"] = df.get(alt_column_name)
+        df["Altitude_Corrected_ft"] = pd.Series(df.get(alt_column_name))
         return df
 
     if alt_column_name not in df.columns:
@@ -59,8 +57,8 @@ def apply_qnh_correction(
     df_corrected = df.copy()
 
     # Convertir altitud y BP a numérico, forzando errores a NaN
-    alt = pd.to_numeric(df_corrected[alt_column_name], errors="coerce")
-    bps = pd.to_numeric(df_corrected[bp_column_name], errors="coerce")
+    alt = pd.Series(pd.to_numeric(df_corrected[alt_column_name], errors="coerce"))
+    bps = pd.Series(pd.to_numeric(df_corrected[bp_column_name], errors="coerce"))
 
     # Rellenar BP faltantes (NaN) con QNE para que la corrección sea 0
     bps = bps.fillna(QNE_HPA)

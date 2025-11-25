@@ -406,8 +406,10 @@ def decode_cat21(cat, length, data: bitstring.BitArray):
             return [], {}, pos
 
         fspec_bits = data[pos : pos + 8]
-        fspec_data.extend(fspec_bits[:7])  # Añade 7 bits de FRN
-        more_fspec = fspec_bits[7]  # Comprueba el bit FX
+        # Convert BitArray to list of bools for the first 7 bits
+        for i in range(7):
+            fspec_data.append(bool(fspec_bits.get(i)))
+        more_fspec = bool(fspec_bits.get(7))  # Comprueba el bit FX
         pos += 8
 
     # Itera sobre los campos presentes en el mensaje y los decodifica o salta

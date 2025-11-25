@@ -990,7 +990,7 @@ pub fn decode_cat48(category: u8, data: &BitSlice<u8, Msb0>, radar_coords: Optio
             }
             15 => {
                 while data[pos+7] {
-    // pos += 8; // Not needed as we're at the end of the field
+                    pos += 8; // Not needed as we're at the end of the field
                 }
             }
             16 => {

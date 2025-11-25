@@ -680,7 +680,7 @@ def decode_cat48(
                     i + 21 for i, present in enumerate(fspec_block_4) if present
                 ]
 
-    decoded = {"Category": cat}
+    decoded: dict[str, float | int | str | bool] = {"Category": cat}
     for item in data_items_to_decode:
         if item >= len(mapper):
             continue  # Skip undefined
@@ -690,15 +690,13 @@ def decode_cat48(
             decoded.update(result)
         pos += step
     if (
-        radar_coords
-        and "Range (m)" in decoded
-        and "Theta" in decoded
+        radar_coords and "Range (m)" in decoded and "Theta" in decoded
         # and "Altitude (m)" in decoded
     ):
         if (
             "Altitude (m)" not in decoded
-            and "STAT" in decoded
-            and decoded["STAT"].endswith("ground")
+            and "STAT (CAT48)" in decoded
+            and str(decoded.get("STAT (CAT48)", "")).endswith("ground")
         ):
             decoded["Flight Level (FL)"] = decoded["Altitude (m)"] = decoded[
                 "Altitude (ft)"
@@ -707,21 +705,26 @@ def decode_cat48(
             return decoded
 
         # Convert polar to Cartesian coordinates
-        r = decoded["Range (m)"]
-        theta_rad = np.deg2rad(decoded["Theta"])
-        H = decoded["Altitude (m)"]
+        r = float(decoded["Range (m)"])
+        theta_rad = np.deg2rad(float(decoded["Theta"]))
+        H = float(decoded["Altitude (m)"])
         elevation_rad = np.asin((H - radar_coords.height) / r)
         coords_polar = CoordinatesPolar(r, theta_rad, elevation_rad)
         coords_cart = GeoUtils.change_radar_spherical_2_radar_cartesian(coords_polar)
-        coords_geocentric = GeoUtils().change_radar_cartesian_2_geocentric(
-            radar_coordinates=radar_coords, cartesian_coordinates=coords_cart
-        )
-        coords_geodesic = GeoUtils().change_geocentric_2_geodesic(coords_geocentric)
-        decoded.update(
-            {
-                "Latitude (deg)": coords_geodesic.lat * 180.0 / np.pi,
-                "Longitude (deg)": coords_geodesic.lon * 180.0 / np.pi,
-                "Altitude (m)": H,
-            }
-        )
+        if coords_cart:
+            coords_geocentric = GeoUtils().change_radar_cartesian_2_geocentric(
+                radar_coordinates=radar_coords, cartesian_coordinates=coords_cart
+            )
+            if coords_geocentric:
+                coords_geodesic = GeoUtils().change_geocentric_2_geodesic(
+                    coords_geocentric
+                )
+                if coords_geodesic:
+                    decoded["Latitude (deg)"] = float(
+                        coords_geodesic.lat * 180.0 / np.pi
+                    )
+                    decoded["Longitude (deg)"] = float(
+                        coords_geodesic.lon * 180.0 / np.pi
+                    )
+                    decoded["Altitude (m)"] = float(H)
     return decoded
