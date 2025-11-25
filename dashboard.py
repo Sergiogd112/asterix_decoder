@@ -19,6 +19,7 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
+import decoderrs
 from decoder.decoder import Decoder
 from decoder.geoutils import CoordinatesWGS84
 from mapdata import *
@@ -222,91 +223,64 @@ def load_messages(
     radar_alt = 27.25
 
     if decoder_choice == "Rust":
-        try:
-            import decoderrs
+        raw_decoded = decoderrs.load(
+            file_path=data_file,
+            radar_lat=radar_lat,
+            radar_lon=radar_lon,
+            radar_alt=radar_alt,
+            max_messages=max_messages,
+        )
 
-            raw_decoded = decoderrs.load(
-                file_path=data_file,
-                radar_lat=radar_lat,
-                radar_lon=radar_lon,
-                radar_alt=radar_alt,
-                max_messages=max_messages,
+        # Map Rust decoder output to expected format
+        decoded = []
+        for item in raw_decoded:
+            # Skip messages with no time information
+            time_value =item.get("Time (s since midnight)", None)
+            
+            if time_value is None:
+                # print("No time information found for item:", item)
+                continue
+
+            mapped_item = {}
+
+            # Map fields with different names
+            mapped_item["Category"] = item.get("Category", "")
+            mapped_item["SAC"] = item.get("SAC", 0)
+            mapped_item["SIC"] = item.get("SIC", 0)
+            mapped_item["ATP Description"] = ""
+            mapped_item["ARC Description"] = ""
+            mapped_item["RC Description"] = ""
+            mapped_item["RAB Description"] = (
+                "RAB set" if item.get("RAB", False) else "RAB not set"
             )
-
-            # Map Rust decoder output to expected format
-            decoded = []
-            for item in raw_decoded:
-                # Skip messages with no time information
-                time_value = item.get(
-                    "Time of Day", item.get("Time (s since midnight)", None)
-                )
-                if time_value is None:
-                    continue
-
-                mapped_item = {}
-
-                # Map fields with different names
-                mapped_item["Category"] = item.get("Category", "")
-                mapped_item["SAC"] = item.get("SAC", 0)
-                mapped_item["SIC"] = item.get("SIC", 0)
-                mapped_item["ATP Description"] = ""
-                mapped_item["ARC Description"] = ""
-                mapped_item["RC Description"] = ""
-                mapped_item["RAB Description"] = (
-                    "RAB set" if item.get("RAB", False) else "RAB not set"
-                )
-                mapped_item["GBS"] = ""
-                mapped_item["Latitude (deg)"] = item.get("Latitude (deg)", 0)
-                mapped_item["Longitude (deg)"] = item.get("Longitude (deg)", 0)
-                mapped_item["ICAO Address (hex)"] = item.get("Aircraft Address", "")
-                mapped_item["Time (s since midnight)"] = time_value
-                mapped_item["UTC Time (HH:MM:SS)"] = item.get("Time String", "")
-                mapped_item["Mode-3/A Code"] = item.get("Mode-3/A Code", "")
-                mapped_item["Flight Level (FL)"] = item.get("Flight Level (FL)", 0)
-                mapped_item["Altitude (ft)"] = item.get("Altitude (ft)", 0)
-                mapped_item["Altitude (m)"] = item.get("Altitude (m)", 0)
-                mapped_item["Target Identification"] = item.get(
-                    "Target Identification", ""
-                )
-                mapped_item["IAS (kt)"] = item.get("IAS (kt)", 0)
-                mapped_item["Mach"] = item.get("Mach", 0)
-                mapped_item["Magnetic Heading (deg)"] = item.get(
-                    "Magnetic Heading (deg)", 0
-                )
-                mapped_item["Target Status VFI"] = ""
-                mapped_item["Target Status RAB"] = (
-                    "RAB set" if item.get("RAB", False) else "RAB not set"
-                )
-                mapped_item["Target Status GBS"] = ""
-                mapped_item["Target Status NRM"] = ""
-                mapped_item["Ground Speed (kts)"] = item.get("Ground Speed (kts)", 0)
-                mapped_item["Track Angle (deg)"] = item.get("Theta (deg)", 0)
-                mapped_item["Roll Angle"] = item.get("Roll Angle", 0)
-                mapped_item["STAT (CAT48)"] = item.get("STAT", "")
-
-                decoded.append(mapped_item)
-        except ImportError as e:
-            print(
-                f"Warning: Rust decoder not available ({e}), falling back to Python decoder"
+            mapped_item["GBS"] = ""
+            mapped_item["Latitude (deg)"] = item.get("Latitude (deg)", 0)
+            mapped_item["Longitude (deg)"] = item.get("Longitude (deg)", 0)
+            mapped_item["ICAO Address (hex)"] = item.get("Aircraft Address", "")
+            mapped_item["Time (s since midnight)"] = time_value
+            mapped_item["UTC Time (HH:MM:SS)"] = item.get("Time String", "")
+            mapped_item["Mode-3/A Code"] = item.get("Mode-3/A Code", "")
+            mapped_item["Flight Level (FL)"] = item.get("Flight Level (FL)", 0)
+            mapped_item["Altitude (ft)"] = item.get("Altitude (ft)", 0)
+            mapped_item["Altitude (m)"] = item.get("Altitude (m)", 0)
+            mapped_item["Target Identification"] = item.get("Target Identification", "")
+            mapped_item["IAS (kt)"] = item.get("IAS (kt)", 0)
+            mapped_item["Mach"] = item.get("Mach", 0)
+            mapped_item["Magnetic Heading (deg)"] = item.get(
+                "Magnetic Heading (deg)", 0
             )
-            decoder = Decoder()
-            coords_radar = CoordinatesWGS84(radar_lat, radar_lon, radar_alt)
-            decoded = decoder.load(
-                data_file,
-                parallel,
-                max_messages=max_messages,
-                radar_coords=coords_radar,
+            mapped_item["Target Status VFI"] = ""
+            mapped_item["Target Status RAB"] = (
+                "RAB set" if item.get("RAB", False) else "RAB not set"
             )
-        except Exception as e:
-            print(f"Error using Rust decoder ({e}), falling back to Python decoder")
-            decoder = Decoder()
-            coords_radar = CoordinatesWGS84(radar_lat, radar_lon, radar_alt)
-            decoded = decoder.load(
-                data_file,
-                parallel,
-                max_messages=max_messages,
-                radar_coords=coords_radar,
-            )
+            mapped_item["Target Status GBS"] = ""
+            mapped_item["Target Status NRM"] = ""
+            mapped_item["Ground Speed (kts)"] = item.get("Ground Speed (kts)", 0)
+            mapped_item["Track Angle (deg)"] = item.get("Theta (deg)", 0)
+            mapped_item["Roll Angle"] = item.get("Roll Angle", 0)
+            mapped_item["STAT (CAT48)"] = item.get("STAT", "")
+
+            decoded.append(mapped_item)
     else:  # Python
         decoder = Decoder()
         coords_radar = CoordinatesWGS84(radar_lat, radar_lon, radar_alt)
@@ -332,16 +306,9 @@ class LoadingScreen:
         self.data_file = DEFAULT_DATA
         self.max_messages = 100000
         self.load_all = False
-        self.decoder_choice = "Python"
+        self.decoder_choice = "Rust"
 
-        # Check if Rust decoder is available
-        try:
-            import decoderrs
-
-            self.decoder_options = ["Python", "Rust"]
-        except ImportError:
-            self.decoder_options = ["Python"]
-            print("Warning: Rust decoder not available, only Python option shown")
+        self.decoder_options = ["Python", "Rust"]
 
     def _file_dialog_callback(self, sender, app_data):
         self.data_file = app_data["file_path_name"]
@@ -394,7 +361,7 @@ class LoadingScreen:
             width=700,
             height=400,
         ):
-            dpg.add_file_extension(".*")
+            # dpg.add_file_extension(".*")
             dpg.add_file_extension(".ast")
 
         with dpg.window(label="Loading", tag="Loading Window", width=400, height=250):
@@ -749,24 +716,24 @@ class Dashboard:
                 )
 
                 # Add legend entries for categories
-                dpg.add_scatter_series(
-                    x=[1.55],
-                    y=[41.35],
-                    label="CAT21 (●)",
-                    parent="y_axis",
-                )
-                dpg.add_scatter_series(
-                    x=[1.55],
-                    y=[41.30],
-                    label="CAT48 (■)",
-                    parent="y_axis",
-                )
-                dpg.add_scatter_series(
-                    x=[1.6],
-                    y=[41.25],
-                    label="CAT48",
-                    parent="y_axis",
-                )
+                # dpg.add_scatter_series(
+                #     x=[1.55],
+                #     y=[41.35],
+                #     label="CAT21 (●)",
+                #     parent="y_axis",
+                # )
+                # dpg.add_scatter_series(
+                #     x=[1.55],
+                #     y=[41.30],
+                #     label="CAT48 (■)",
+                #     parent="y_axis",
+                # )
+                # dpg.add_scatter_series(
+                #     x=[1.6],
+                #     y=[41.25],
+                #     label="CAT48",
+                #     parent="y_axis",
+                # )
 
                 # Create scatter series for each aircraft with category-specific markers and colors
                 # print(

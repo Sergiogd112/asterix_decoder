@@ -95,11 +95,11 @@ fn load(
 
         let json_value = match cat {
             21 => {
-                let decoded = cat21::decode_cat21(data_slice);
+                let decoded = cat21::decode_cat21(cat, data_slice);
                 Some(serde_json::to_value(decoded).unwrap())
             }
             48 => {
-                let decoded = cat48::decode_cat48(data_slice, Some(radar_coords));
+                let decoded = cat48::decode_cat48(cat, data_slice, Some(radar_coords));
                 Some(serde_json::to_value(decoded).unwrap())
             }
             _ => None,

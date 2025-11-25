@@ -122,6 +122,9 @@ def decode_target_report_descriptor(data: bitstring.BitArray):
 
     # Octetos de extensión
     if fx:
+        decoded["GBS"] = data[bits_processed+2]
+        fx = data[bits_processed + 7]
+        bits_processed += 8
         # Avanza el puntero por todas las extensiones FX
         while fx:
             if len(data) < (bits_processed + 8):

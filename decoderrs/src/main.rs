@@ -90,12 +90,12 @@ fn load_from_file(
 
         match cat {
             21 => {
-                let decoded = cat21::decode_cat21(data_slice);
+                let decoded = cat21::decode_cat21(cat, data_slice);
                 results.push(AsterixMessage::Cat21(decoded));
                 message_count += 1;
             }
             48 => {
-                let decoded = cat48::decode_cat48(data_slice, Some(radar_coords));
+                let decoded = cat48::decode_cat48(cat, data_slice, Some(radar_coords));
                 results.push(AsterixMessage::Cat48(decoded));
                 message_count += 1;
             }

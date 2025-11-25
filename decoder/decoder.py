@@ -98,16 +98,20 @@ class Decoder:
         flattened_data = []
         for message in decoded_messages:
             flat_record = {}
-            for field_value in message.values():
-                if isinstance(field_value, dict):
-                    flat_record.update(field_value)
+            # Include top-level fields
+            for key, value in message.items():
+                if not isinstance(value, dict):
+                    flat_record[key] = value
+                else:
+                    # Include nested dictionary fields
+                    flat_record.update(value)
             flattened_data.append(flat_record)
 
         df = pd.DataFrame(flattened_data)
 
         # Lista de columnas exacta que solicitaste
         cols_to_export = [
-            "CategorySAC",
+            "Category",
             "SIC",
             "ATP Description",
             "ARC Description",

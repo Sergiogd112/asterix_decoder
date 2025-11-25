@@ -3,6 +3,7 @@ use serde::Serialize;
 
 #[derive(Debug, Serialize, Default)]
 pub struct Cat21 {
+    #[serde(rename = "Category")]
     pub category: u8,
     #[serde(rename = "SAC")]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -22,6 +23,9 @@ pub struct Cat21 {
     #[serde(rename = "RAB Description")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rab_description: Option<String>,
+    #[serde(rename = "GBS")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gbs: Option<u8>,
     #[serde(rename = "Latitude (deg)")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub latitude: Option<f64>,
@@ -86,7 +90,7 @@ fn decode_data_source_id(data: &BitSlice<u8, Msb0>) -> (u8, u8, usize) {
     (sac, sic, 16)
 }
 
-fn decode_target_report_descriptor(data: &BitSlice<u8, Msb0>) -> (String, String, String, String, usize) {
+fn decode_target_report_descriptor(data: &BitSlice<u8, Msb0>) -> (String, String, String, String, Option<u8>, usize) {
     let val = data[0..8].load::<u8>();
     let atp = (val >> 5) & 0b111;
     let arc = (val >> 3) & 0b11;
@@ -108,9 +112,16 @@ fn decode_target_report_descriptor(data: &BitSlice<u8, Msb0>) -> (String, String
     let rab_description = if rab == 1 { "Report from field monitor" } else { "Report from ADS-B transceiver" }.to_string();
 
     let mut bits_processed = 8;
+    let mut gbs_value = None;
 
     // Handle FX extensions
     if fx {
+        // Handle GBS bit in first extension (Python version: decoded["GBS"] = data[bits_processed+2])
+        if data.len() >= bits_processed + 8 {
+            // GBS bit is at position bits_processed+2 in the first extension octet
+            gbs_value = Some(data[bits_processed + 2] as u8);
+        }
+        
         let mut current_fx = fx;
         while current_fx {
             if data.len() < bits_processed + 8 {
@@ -121,7 +132,7 @@ fn decode_target_report_descriptor(data: &BitSlice<u8, Msb0>) -> (String, String
         }
     }
 
-    (atp_description, arc_description, rc_description, rab_description, bits_processed)
+    (atp_description, arc_description, rc_description, rab_description, gbs_value, bits_processed)
 }
 
 fn decode_wgs84_coords_high_res(data: &BitSlice<u8, Msb0>) -> (f64, f64, usize) {
@@ -169,8 +180,8 @@ fn decode_air_speed(data: &BitSlice<u8, Msb0>) -> (Option<f64>, Option<f64>, usi
     let air_speed_raw = data[2..16].load_be::<u16>();
 
     match im {
-        0 => (Some(air_speed_raw as f64), None, 16), // IAS in knots
-        1 => (None, Some(air_speed_raw as f64 * 0.001), 16), // Mach
+        0 => (Some(air_speed_raw as f64 * 1.0), None, 16), // IAS in knots (LSB = 1 kt)
+        1 => (None, Some(air_speed_raw as f64 * 0.001), 16), // Mach (LSB = 0.001 Mach)
         _ => (None, None, 16), // Invalid
     }
 }
@@ -207,6 +218,7 @@ fn decode_airborne_ground_vector(data: &BitSlice<u8, Msb0>) -> (f64, f64, usize)
     let track_angle_raw = data[16..32].load_be::<u16>();
     
     // LSB = 2^-14 NM/s = 1/256 kt (approx), convert to knots
+    // Python version: ground_speed_raw * (2**-14) * 3600
     let ground_speed_kts = ground_speed_raw as f64 * (2_f64.powi(-14)) * 3600.0;
     let track_angle = track_angle_raw as f64 * (360.0 / 65536.0);
 
@@ -283,9 +295,9 @@ fn skip_repetitive_mode_s_mb(data: &BitSlice<u8, Msb0>) -> usize {
     8 + (rep as usize) * 8 * 8 // 1 octeto REP + N * 8 octetos
 }
 
-pub fn decode_cat21(data: &BitSlice<u8, Msb0>) -> Cat21 {
+pub fn decode_cat21(category: u8, data: &BitSlice<u8, Msb0>) -> Cat21 {
     let mut decoded = Cat21 {
-        category: 21,
+        category,
         ..Default::default()
     };
 
@@ -330,11 +342,12 @@ pub fn decode_cat21(data: &BitSlice<u8, Msb0>) -> Cat21 {
             }
             2 => {
                 // Target Report Descriptor
-                let (atp_desc, arc_desc, rc_desc, rab_desc, bits) = decode_target_report_descriptor(&data[pos..]);
+                let (atp_desc, arc_desc, rc_desc, rab_desc, gbs_value, bits) = decode_target_report_descriptor(&data[pos..]);
                 decoded.atp_description = Some(atp_desc);
                 decoded.arc_description = Some(arc_desc);
                 decoded.rc_description = Some(rc_desc);
                 decoded.rab_description = Some(rab_desc);
+                decoded.gbs = gbs_value;
                 pos += bits;
             }
             3 => {

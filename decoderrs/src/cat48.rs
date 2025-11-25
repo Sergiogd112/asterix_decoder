@@ -4,6 +4,7 @@ use serde::Serialize;
 
 #[derive(Debug, Serialize, Default)]
 pub struct Cat48 {
+    #[serde(rename = "Category")]
     pub category: u8,
     #[serde(rename = "SAC")]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -11,7 +12,7 @@ pub struct Cat48 {
     #[serde(rename = "SIC")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sic: Option<u8>,
-    #[serde(rename = "Time of Day")]
+    #[serde(rename = "Time (s since midnight)")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub time_of_day: Option<f64>,
     #[serde(rename = "Time String")]
@@ -95,9 +96,9 @@ pub struct Cat48 {
     #[serde(rename = "Aircraft Address")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub aircraft_address: Option<String>,
-    #[serde(rename = "Aircraft Identification")]
+    #[serde(rename = "Target Identification")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub aircraft_id: Option<String>,
+    pub target_identification: Option<String>,
     #[serde(flatten)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mode_s_mb_data: Option<ModeSMBData>,
@@ -821,9 +822,9 @@ fn decode_com_acas_cap_fl_st(
     )
 }
 
-pub fn decode_cat48(data: &BitSlice<u8, Msb0>, radar_coords: Option<CoordinatesWGS84>) -> Cat48 {
+pub fn decode_cat48(category: u8, data: &BitSlice<u8, Msb0>, radar_coords: Option<CoordinatesWGS84>) -> Cat48 {
     let mut decoded = Cat48 {
-        category: 48,
+        category,
         ..Default::default()
     };
 
@@ -950,7 +951,7 @@ pub fn decode_cat48(data: &BitSlice<u8, Msb0>, radar_coords: Option<CoordinatesW
             8 => {
                 // I048/040 Aircraft Identification
                 let (aid, bits) = decode_aircraft_id(&data[pos..]);
-                decoded.aircraft_id = Some(aid.clone());
+                decoded.target_identification = Some(aid.clone());
                 pos += bits;
             }
             9 => {
