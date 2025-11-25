@@ -13,6 +13,8 @@ The dashboard loads ASTERIX data using `decoder.Decoder().load()` (see
 
 import time
 import threading
+import traceback
+import colorsys
 
 import dearpygui.dearpygui as dpg
 import numpy as np
@@ -235,8 +237,8 @@ def load_messages(
         decoded = []
         for item in raw_decoded:
             # Skip messages with no time information
-            time_value =item.get("Time (s since midnight)", None)
-            
+            time_value = item.get("Time (s since midnight)", None)
+
             if time_value is None:
                 # print("No time information found for item:", item)
                 continue
@@ -339,6 +341,8 @@ class LoadingScreen:
                 dpg.delete_item("Loading Window")
                 dpg.set_primary_window("Primary Window", True)
             except Exception as e:
+                print(f"Error: {str(e)}")
+                print(traceback.format_exc())
                 dpg.configure_item("loading_text", label=f"Error: {str(e)}")
                 # Show the load button again so user can retry
                 dpg.configure_item("load_button", show=True)
@@ -440,6 +444,12 @@ class Dashboard:
             .to_numpy()
         ]
         self.aircraft_series = {}
+        self.aircraft_trail_segments = {}
+        self.series_theme_cache = {}
+        self.aircraft_color_cache = {}
+        # Number of frames to keep in the visible history trail.
+        self.trail_length_frames = 45
+        self.trail_segment_count = 1
 
         self.current_frame = 0
         self.min_frame = 0
@@ -524,6 +534,64 @@ class Dashboard:
                 ]
         self.filtered_df = filtered_df
 
+    def _get_aircraft_color(self, key, cat):
+        """Return a soft, distinct color per aircraft using pastel HSV hashing."""
+        if key in self.aircraft_color_cache:
+            return self.aircraft_color_cache[key]
+
+        # Derive hue from the aircraft identifier hash for stable uniqueness.
+        hue = (abs(hash(key)) % 360) / 360.0
+        saturation = 0.35  # lower saturation for softer colors
+        value = 0.82  # slightly dimmer for night-friendly palette
+        r, g, b = colorsys.hsv_to_rgb(hue, saturation, value)
+        color = [int(r * 255), int(g * 255), int(b * 255), 255]
+        self.aircraft_color_cache[key] = color
+        return color
+
+    def _get_series_theme(self, series_type, color):
+        """Cache and return a DearPyGui theme with the requested color."""
+        key = (series_type, tuple(color))
+        if key not in self.series_theme_cache:
+            with dpg.theme() as theme:
+                with dpg.theme_component(series_type):
+                    dpg.add_theme_color(
+                        dpg.mvPlotCol_Line,
+                        color,
+                        category=dpg.mvThemeCat_Plots,
+                    )
+                    if series_type == dpg.mvScatterSeries:
+                        dpg.add_theme_color(
+                            dpg.mvPlotCol_MarkerOutline,
+                            color,
+                            category=dpg.mvThemeCat_Plots,
+                        )
+                        filled = color.copy()
+                        filled[3] = min(255, color[3] + 40)
+                        dpg.add_theme_color(
+                            dpg.mvPlotCol_MarkerFill,
+                            filled,
+                            category=dpg.mvThemeCat_Plots,
+                        )
+                    if series_type == dpg.mvLineSeries:
+                        dpg.add_theme_style(
+                            dpg.mvPlotStyleVar_LineWeight,
+                            3.5,
+                            category=dpg.mvThemeCat_Plots,
+                        )
+            self.series_theme_cache[key] = theme
+        return self.series_theme_cache[key]
+
+    def _update_trail_segments(self, key, coords):
+        """Update single translucent trail series for the aircraft."""
+        segments = self.aircraft_trail_segments.get(key, [])
+        if not segments:
+            return
+        seg = segments[0]
+        if not coords or len(coords[0]) < 2:
+            dpg.set_value(seg, ([], []))
+            return
+        dpg.set_value(seg, coords)
+
     def _filter_callback(self, sender, app_data):
         """Callback for all filter UI elements."""
         filter_tag = dpg.get_item_alias(sender)
@@ -604,6 +672,25 @@ class Dashboard:
             self.filtered_per_frame_df["frame"] == self.current_frame
         ]
 
+        # Pre-compute recent history for trails so we only slice once.
+        trail_window = self.filtered_per_frame_df[
+            (
+                self.filtered_per_frame_df["frame"]
+                >= self.current_frame - self.trail_length_frames
+            )
+            & (self.filtered_per_frame_df["frame"] <= self.current_frame)
+        ]
+        trail_dict = {}
+        if not trail_window.empty:
+            for key, group in trail_window.groupby(
+                ["Target Identification", "Category"]
+            ):
+                group = group.sort_values("frame")
+                trail_dict[key] = (
+                    group["Longitude (deg)"].tolist(),
+                    group["Latitude (deg)"].tolist(),
+                )
+
         aircraft_in_frame = set()
         for _, row in frame_data.iterrows():
             aid = row["Target Identification"]
@@ -614,10 +701,14 @@ class Dashboard:
             if key in self.aircraft_series:
                 dpg.set_value(self.aircraft_series[key], (lon, lat))
                 aircraft_in_frame.add(key)
+            if key in self.aircraft_trail_segments:
+                self._update_trail_segments(key, trail_dict.get(key))
 
         for key in self.aircraft_series:
             if key not in aircraft_in_frame:
                 dpg.set_value(self.aircraft_series[key], ([], []))
+            if key in self.aircraft_trail_segments and key not in trail_dict:
+                self._update_trail_segments(key, None)
 
     def _mouse_wheel_callback(self, sender, app_data):
         """Callback for mouse wheel events for zooming."""
@@ -682,6 +773,7 @@ class Dashboard:
                 height=-1,
                 width=-1,
                 tag="map_plot",
+                pan_button=dpg.mvMouseButton_Middle,
             ):
                 # Setup axes first
                 dpg.add_plot_axis(dpg.mvXAxis, label="Longitude (deg)", tag="x_axis")
@@ -742,16 +834,9 @@ class Dashboard:
                 for aid, cat in self.all_aircraft_keys:
                     key = (aid, cat)
                     print(f"DEBUG: Creating series for {aid}-{cat}")
-                    # Use different markers and colors for different categories
-                    if cat == 21:
-                        marker = dpg.mvPlotMarker_Circle
-                        color = [0, 150, 255, 255]  # Blue
-                    elif cat == 48:
-                        marker = dpg.mvPlotMarker_Square
-                        color = [255, 100, 0, 255]  # Orange
-                    else:
-                        marker = dpg.mvPlotMarker_Diamond
-                        color = [128, 128, 128, 255]  # Gray
+                    color = self._get_aircraft_color(key, cat)
+                    subtler_color = color.copy()
+                    subtler_color[3] = 90  # Softer alpha for the trails
 
                     series = dpg.add_scatter_series(
                         x=[],
@@ -759,7 +844,25 @@ class Dashboard:
                         label=f"{aid}-{cat}",
                         parent="y_axis",
                     )
+                    dpg.bind_item_theme(
+                        series,
+                        self._get_series_theme(dpg.mvScatterSeries, color),
+                    )
+
                     self.aircraft_series[key] = series
+                    trail_color = subtler_color.copy()
+                    trail_color[3] = 80  # high transparency
+                    trail_series = dpg.add_line_series(
+                        x=[],
+                        y=[],
+                        label="",
+                        parent="y_axis",
+                    )
+                    dpg.bind_item_theme(
+                        trail_series,
+                        self._get_series_theme(dpg.mvLineSeries, trail_color),
+                    )
+                    self.aircraft_trail_segments[key] = [trail_series]
                 #     print(f"DEBUG: Created series {key} -> {series}")
                 # print(
                 #     f"DEBUG: Total aircraft series created: {len(self.aircraft_series)}"
