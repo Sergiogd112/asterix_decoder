@@ -675,7 +675,9 @@ def decode_cat48(
             decoded.update(result)
         pos += step
     if (
-        radar_coords and "Range (m)" in decoded and "Theta" in decoded
+        radar_coords
+        and "Range (m)" in decoded
+        and "Theta" in decoded
         # and "Altitude (m)" in decoded
     ):
         if (

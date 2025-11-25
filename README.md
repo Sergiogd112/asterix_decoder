@@ -68,22 +68,26 @@ See [BUILD_INSTRUCTIONS.md](BUILD_INSTRUCTIONS.md) for detailed build instructio
 
 ## 📖 Usage
 
-1. **Launch the dashboard** using one of the methods above
-2. **Select ASTERIX data file** using the file dialog
-3. **Configure loading options**:
-   - Set maximum messages to load (optional)
-   - Choose to load all messages
-4. **Start visualization**:
-   - Use Play/Pause buttons to control animation
-   - Adjust playback speed with the slider
-   - Navigate frames with the frame slider
-5. **Apply filters**:
-   - Set latitude/longitude bounds
-   - Filter by altitude range
-   - Filter by ground status (On Ground/Airborne)
-   - Filter by ASTERIX category
-6. **Export data**:
-   - Click "Export to CSV" to save filtered data
+### 1. Launch and Load Data
+1. Start the app (pre-built binary or `uv run python dashboard.py`).
+2. In the `Loading` window, click **Select File** and choose an `.ast` capture.
+3. Pick the decoder backend (`Rust` recommended) and optional **Max Messages** limit.
+4. Press **Load and Run** to stream the capture into the dashboard.
+
+![Loading screen with decoder options](loading_screen.png)
+
+### 2. Navigate the Dashboard
+- Use the **Play/Pause** controls at the top to animate frames; drag the **Frame** slider for random access.
+- Adjust **Speed (fps)** to fast-forward or slow down playback.
+- Hover aircraft markers for rich tooltips with ID, altitude, roll, and CAT-specific status.
+- Click an aircraft to pin its details in the `Clicked Aircraft Info` pane.
+
+![Dashboard with aircraft map and controls](dashboard.png)
+
+### 3. Filter and Export
+- Toggle the `Filters` panel to constrain latitude/longitude, altitude, ground/airborne status, or ASTERIX category.
+- Enable **Ground Status** or **Category** selectors to isolate specific traffic types.
+- When satisfied, hit **Export to CSV** to save the currently filtered dataset for offline analysis.
 
 ## 🗂️ Project Structure
 

@@ -27,13 +27,17 @@ if __name__ == "__main__":
     count_no_time = 0
     for item in decoded_rust:
         # Skip messages with no time information
-        time_value =item.get("Time (s since midnight)", None)
-        
+        time_value = item.get("Time (s since midnight)", None)
+
         if time_value is None:
             # print("No time information found for item:", item)
             count_no_time += 1
     print(f"Number of messages with no time information: {count_no_time}")
-    decoded_rust = [item for item in decoded_rust if item.get("Time (s since midnight)", None) is not None]
+    decoded_rust = [
+        item
+        for item in decoded_rust
+        if item.get("Time (s since midnight)", None) is not None
+    ]
     df_rust = pd.json_normalize(decoded_rust)
     df_rust.to_csv("adsb_rust.csv", index=False)
     print(f"Decoding time with Rust: {time()-start:.2f} seconds")
