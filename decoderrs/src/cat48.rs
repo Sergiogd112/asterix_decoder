@@ -218,15 +218,18 @@ pub struct BDS40 {
     #[serde(rename = "Status MCP/FCU")]
     pub status_mcp: bool,
     #[serde(rename = "MCP/FCU Selected Altitude")]
-    pub mcp_alt: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mcp_alt: Option<f64>,
     #[serde(rename = "Status FMS")]
     pub status_fms: bool,
     #[serde(rename = "FMS Selected Altitude")]
-    pub fms_alt: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fms_alt: Option<f64>,
     #[serde(rename = "Status Barometric Reference")]
     pub status_bar: bool,
     #[serde(rename = "Barometric Pressure Setting")]
-    pub bar_press: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bar_press: Option<f64>,
     #[serde(rename = "Status MCP/FCU Mode")]
     pub status_mcp_mode: bool,
     #[serde(rename = "VNAV Mode")]
@@ -246,23 +249,28 @@ pub struct BDS50 {
     #[serde(rename = "Status Roll Angle")]
     pub status_roll: bool,
     #[serde(rename = "Roll Angle")]
-    pub roll_angle: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub roll_angle: Option<f64>,
     #[serde(rename = "Status Track Angle")]
     pub status_track: bool,
     #[serde(rename = "Track Angle")]
-    pub track_angle: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub track_angle: Option<f64>,
     #[serde(rename = "Status Ground Speed")]
     pub status_gs: bool,
-    #[serde(rename = "Ground Speed (kts)")]
-    pub gs: f64,
+    #[serde(rename = "Ground Speed (kts) BDS")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gs: Option<f64>,
     #[serde(rename = "Status Track Angle Rate")]
     pub status_ta_rate: bool,
     #[serde(rename = "Track Angle Rate")]
-    pub ta_rate: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ta_rate: Option<f64>,
     #[serde(rename = "Status TAS")]
     pub status_tas: bool,
     #[serde(rename = "TAS")]
-    pub tas: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tas: Option<f64>,
 }
 
 #[derive(Debug, Serialize, Default)]
@@ -270,23 +278,28 @@ pub struct BDS60 {
     #[serde(rename = "Status Magnetic Heading")]
     pub status_mag_h: bool,
     #[serde(rename = "Magnetic Heading (deg) BDS")]
-    pub mag_h: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mag_h: Option<f64>,
     #[serde(rename = "Status IAS")]
     pub status_ias: bool,
     #[serde(rename = "IAS (kt)")]
-    pub ias: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ias: Option<f64>,
     #[serde(rename = "Status Mach")]
     pub status_mach: bool,
     #[serde(rename = "Mach")]
-    pub mach: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mach: Option<f64>,
     #[serde(rename = "Status Barometric Altitude Rate")]
     pub status_bar_rate: bool,
     #[serde(rename = "Barometric Altitude Rate")]
-    pub bar_rate: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bar_rate: Option<f64>,
     #[serde(rename = "Status Inertial Vertical Velocity")]
     pub status_inert_vv: bool,
     #[serde(rename = "Inertial Vertical Velocity")]
-    pub inert_vv: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub inert_vv: Option<f64>,
 }
 
 #[derive(Debug, Serialize, Default)]
@@ -422,8 +435,15 @@ fn decode_mode3a_octal(data: &BitSlice<u8, Msb0>) -> (String, usize) {
 }
 
 fn decode_fl_binary(data: &BitSlice<u8, Msb0>) -> (f64, usize) {
-    let fl = data[2..16].load_be::<u16>() as f64 / 4.0; // Changed to u16 to match Python's uint behavior for now
-    (fl, 16)
+    let val_unsigned = data[2..16].load_be::<u16>();
+    let val = if val_unsigned & 0x2000 != 0 {
+        // Negative. val_unsigned is something like 0b00xxxxxxxxxxxxxx where the first x is 1.
+        // We need to make it 0b11xxxxxxxxxxxxxx
+        (val_unsigned | 0xC000) as i16
+    } else {
+        val_unsigned as i16
+    };
+    (val as f64 / 4.0, 16)
 }
 
 fn decode_aircraft_address(data: &BitSlice<u8, Msb0>) -> (String, usize) {
@@ -536,11 +556,23 @@ fn decode_radar_plot_characteristics(
 
 fn decode_bds_4_0(data: &BitSlice<u8, Msb0>) -> (BDS40, usize) {
     let status_mcp = data[0];
-    let mcp_alt = data[1..13].load_be::<u16>() as f64 / 16.0;
+    let mcp_alt = if status_mcp {
+        Some(data[1..13].load_be::<u16>() as f64 / 16.0)
+    } else {
+        None
+    };
     let status_fms = data[13];
-    let fms_alt = data[14..26].load_be::<u16>() as f64 / 16.0;
+    let fms_alt = if status_fms {
+        Some(data[14..26].load_be::<u16>() as f64 / 16.0)
+    } else {
+        None
+    };
     let status_bar = data[26];
-    let bar_press = data[27..39].load_be::<u16>() as f64 * 0.1 + 800.0;
+    let bar_press = if status_bar {
+        Some(data[27..39].load_be::<u16>() as f64 * 0.1 + 800.0)
+    } else {
+        None
+    };
     let status_mcp_mode = data[47];
     let vnav = data[48];
     let alt_hold = data[49];
@@ -576,30 +608,57 @@ fn decode_bds_4_0(data: &BitSlice<u8, Msb0>) -> (BDS40, usize) {
 
 fn decode_bds_5_0(data: &BitSlice<u8, Msb0>) -> (BDS50, usize) {
     let status_roll = data[0];
-    let roll_angle_raw = data[1..11].load_be::<u16>();
-    let roll_angle = if roll_angle_raw >= 1024 {
-        (roll_angle_raw as i32 - 2048) as f64
+    let roll_angle = if status_roll {
+        let roll_angle_raw = data[1..11].load_be::<u16>();
+        Some(
+            (if roll_angle_raw >= 512 {
+                (roll_angle_raw as i16 - 1024) as f64
+            } else {
+                roll_angle_raw as f64
+            }) * (45.0 / 256.0),
+        )
     } else {
-        roll_angle_raw as f64
-    } * (45.0 / 256.0);
+        None
+    };
     let status_track = data[11];
-    let track_angle_raw = data[12..23].load_be::<u16>();
-    let track_angle = if track_angle_raw >= 1024 {
-        (track_angle_raw as i32 - 2048) as f64
+    let track_angle = if status_track {
+        let track_angle_raw = data[12..23].load_be::<u16>();
+        Some(
+            (if track_angle_raw >= 1024 {
+                (track_angle_raw as i32 - 2048) as f64
+            } else {
+                track_angle_raw as f64
+            }) * (90.0 / 512.0),
+        )
     } else {
-        track_angle_raw as f64
-    } * (90.0 / 512.0);
+        None
+    };
     let status_gs = data[23];
-    let gs = data[24..34].load_be::<u16>() as f64 * 2.0;
-    let status_ta_rate = data[34];
-    let ta_rate_raw = data[35..45].load_be::<u16>();
-    let ta_rate = if ta_rate_raw >= 1024 {
-        (ta_rate_raw as i32 - 2048) as f64
+    
+    let gs = if status_gs {
+        Some(data[24..34].load_be::<u16>() as f64 * 2.0)
     } else {
-        ta_rate_raw as f64
-    } * (8.0 / 256.0);
+        None
+    };
+    let status_ta_rate = data[34];
+    let ta_rate = if status_ta_rate {
+        let ta_rate_raw = data[35..45].load_be::<u16>();
+        Some(
+            (if ta_rate_raw >= 512 {
+                (ta_rate_raw as i16 - 1024) as f64
+            } else {
+                ta_rate_raw as f64
+            }) * (8.0 / 256.0),
+        )
+    } else {
+        None
+    };
     let status_tas = data[45];
-    let tas = data[46..56].load_be::<u16>() as f64 * 2.0;
+    let tas = if status_tas {
+        Some(data[46..56].load_be::<u16>() as f64 * 2.0)
+    } else {
+        None
+    };
 
     let bds_5_0 = BDS50 {
         status_roll,
@@ -619,30 +678,56 @@ fn decode_bds_5_0(data: &BitSlice<u8, Msb0>) -> (BDS50, usize) {
 
 fn decode_bds_6_0(data: &BitSlice<u8, Msb0>) -> (BDS60, usize) {
     let status_mag_h = data[0];
-    let mag_h_raw = data[1..12].load_be::<u16>();
-    let mag_h = (if mag_h_raw >= 1024 {
-        (mag_h_raw as i32 - 2048) as f64
+    let mag_h = if status_mag_h {
+        let mag_h_raw = data[1..12].load_be::<u16>();
+        Some(
+            (if mag_h_raw >= 1024 {
+                (mag_h_raw as i16 - 2048) as f64
+            } else {
+                mag_h_raw as f64
+            }) * (90.0 / 512.0),
+        )
     } else {
-        mag_h_raw as f64
-    }) * (90.0 / 512.0);
+        None
+    };
     let status_ias = data[12];
-    let ias = data[13..23].load_be::<u16>() as f64 * 1.0;
+    let ias = if status_ias {
+        Some(data[13..23].load_be::<u16>() as f64 * 1.0)
+    } else {
+        None
+    };
     let status_mach = data[23];
-    let mach = data[24..34].load_be::<u16>() as f64 * (2.048 / 512.0);
+    let mach = if status_mach {
+        Some(data[24..34].load_be::<u16>() as f64 * (2.048 / 512.0))
+    } else {
+        None
+    };
     let status_bar_rate = data[34];
-    let bar_rate_raw = data[35..45].load_be::<u16>();
-    let bar_rate = if bar_rate_raw >= 512 {
-        (bar_rate_raw as i32 - 1024) as f64
+    let bar_rate = if status_bar_rate {
+        let bar_rate_raw = data[35..45].load_be::<u16>();
+        Some(
+            (if bar_rate_raw >= 512 {
+                (bar_rate_raw as i16 - 1024) as f64
+            } else {
+                bar_rate_raw as f64
+            }) * 32.0,
+        )
     } else {
-        bar_rate_raw as f64
-    } * 32.0;
+        None
+    };
     let status_inert_vv = data[45];
-    let inert_vv_raw = data[46..56].load_be::<u16>();
-    let inert_vv = if inert_vv_raw >= 512 {
-        (inert_vv_raw as i32 - 1024) as f64
+    let inert_vv = if status_inert_vv {
+        let inert_vv_raw = data[46..56].load_be::<u16>();
+        Some(
+            (if inert_vv_raw >= 512 {
+                (inert_vv_raw as i16 - 1024) as f64
+            } else {
+                inert_vv_raw as f64
+            }) * 32.0,
+        )
     } else {
-        inert_vv_raw as f64
-    } * 32.0;
+        None
+    };
 
     let bds_6_0 = BDS60 {
         status_mag_h,
@@ -686,23 +771,24 @@ fn decode_mode_s_mb_data(data: &BitSlice<u8, Msb0>) -> (ModeSMBData, usize) {
         match bda1 {
             4 => {
                 if bda2 == 0 && pos + 56 <= data.len() {
-                    let (bds_4_0, _) = decode_bds_4_0(&data[block_start + 8..block_start + 64]);
+                    let (bds_4_0, _) = decode_bds_4_0(&data[block_start..block_start + 56]);
                     mb_data.bds_4_0 = Some(bds_4_0);
                 }
             }
             5 => {
                 if bda2 == 0 && pos + 56 <= data.len() {
-                    let (bds_5_0, _) = decode_bds_5_0(&data[block_start + 8..block_start + 64]);
+                    let (bds_5_0, _) = decode_bds_5_0(&data[block_start..block_start + 56]);
                     mb_data.bds_5_0 = Some(bds_5_0);
                 }
             }
             6 => {
                 if bda2 == 0 && pos + 56 <= data.len() {
-                    let (bds_6_0, _) = decode_bds_6_0(&data[block_start + 8..block_start + 64]);
+                    let (bds_6_0, _) = decode_bds_6_0(&data[block_start..block_start + 56]);
                     mb_data.bds_6_0 = Some(bds_6_0);
                 }
             }
             _ => {
+                println!("Unsupported BDS: {}.{}", bda1, bda2);
                 // Unsupported BDS
             }
         }
@@ -1062,8 +1148,10 @@ pub fn decode_cat48(category: u8, data: &BitSlice<u8, Msb0>, radar_coords: Optio
         // Only proceed if all necessary values are present and range_m > 0
         if r_m > 0.0 {
             let theta_rad = th.to_radians();
-            // Clamp argument of asin to avoid NaN for small floating point errors
-            let arg = (h_m - rc.height) / r_m;
+            let h = rc.height;
+            let re = 6371000.0;
+            let arg = (2.0 * re * (h_m - h) + h_m.powi(2) - h.powi(2) - r_m.powi(2))
+                / (2.0 * r_m * (re + h));
             let elevation_rad = arg.clamp(-1.0, 1.0).asin();
 
             let coords_polar = CoordinatesPolar {

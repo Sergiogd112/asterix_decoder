@@ -150,14 +150,14 @@ def decode_mode3a_octal(data, pos):
     b = data[pos + 7 : pos + 10].uint
     c = data[pos + 10 : pos + 13].uint
     d = data[pos + 13 : pos + 16].uint  # Fixed from original bug
-    return {"Mode-3/A Code": ((a * 10 + b) * 10 + c) * 10 + d}, 16
+    return {"Mode-3/A Code": f"{a}{b}{c}{d}"}, 16
 
 
 def decode_fl_binary(data, pos):
     """Optimized inline version (fixed length)."""
     validated = data[pos]
     garbled = data[pos + 1]
-    fl = data[pos + 2 : pos + 16].uint / 4.0
+    fl = data[pos + 2 : pos + 16].int / 4.0
     return {
         # "Validated": bool(validated),
         # "Garbled": bool(garbled),
@@ -264,11 +264,11 @@ def decode_BDS_4_0(data, pos):
     if len(data) - pos < 56:
         raise ValueError("Data length must be at least 56 bits for BDS 4,0")
     status_mcp = data[pos]
-    mcp_alt = data[pos + 1 : pos + 13].uint / 16.0
+    mcp_alt = data[pos + 1 : pos + 13].uint / 16.0 if status_mcp else None
     status_fms = data[pos + 13]
-    fms_alt = data[pos + 14 : pos + 26].uint / 16.0
+    fms_alt = data[pos + 14 : pos + 26].uint / 16.0 if status_fms else None
     status_bar = data[pos + 26]
-    bar_press = data[pos + 27 : pos + 39].uint * 0.1 + 800.0
+    bar_press = (data[pos + 27 : pos + 39].uint * 0.1 + 800.0) if status_bar else None
     # Bits 39-46 unused?
     status_mcp_mode = data[pos + 47]
     vnav = data[pos + 48]
@@ -302,15 +302,15 @@ def decode_BDS_5_0(data, pos):
     if len(data) - pos < 56:
         raise ValueError("Data length must be at least 56 bits for BDS 5,0")
     status_roll = data[pos]
-    roll_angle = data[pos + 1 : pos + 11].int * (45 / 256)
+    roll_angle = data[pos + 1 : pos + 11].int * (45 / 256) if status_roll else None
     status_track = data[pos + 11]
-    track_angle = data[pos + 12 : pos + 23].int * (90 / 512)
+    track_angle = data[pos + 12 : pos + 23].int * (90 / 512) if status_track else None
     status_gs = data[pos + 23]
-    gs = data[pos + 24 : pos + 34].uint * 2.0
+    gs = data[pos + 24 : pos + 34].uint * 2.0 if status_gs else None
     status_ta_rate = data[pos + 34]
-    ta_rate = data[pos + 35 : pos + 45].int * (8 / 256)
+    ta_rate = data[pos + 35 : pos + 45].int * (8 / 256) if status_ta_rate else None
     status_tas = data[pos + 45]
-    tas = data[pos + 46 : pos + 56].uint * 2.0
+    tas = data[pos + 46 : pos + 56].uint * 2.0 if status_tas else None
     bds_5_0 = {
         "Status Roll Angle": bool(status_roll),
         "Roll Angle": roll_angle,
@@ -331,15 +331,23 @@ def decode_BDS_6_0(data, pos):
     if len(data) - pos < 56:
         raise ValueError("Data length must be at least 56 bits for BDS 6,0")
     status_mag_h = data[pos]
-    mag_h = data[pos + 1 : pos + 12].int * (90.0 / 512.0)
+    mag_h = (
+        data[pos + 1 : pos + 12].int * (90.0 / 512.0) if status_mag_h else None
+    )
     status_ias = data[pos + 12]
-    ias = data[pos + 13 : pos + 23].uint * 1.0
+    ias = data[pos + 13 : pos + 23].uint * 1.0 if status_ias else None
     status_mach = data[pos + 23]
-    mach = data[pos + 24 : pos + 34].uint * (2.048 / 512)
+    mach = (
+        data[pos + 24 : pos + 34].uint * (2.048 / 512) if status_mach else None
+    )
     status_bar_rate = data[pos + 34]
-    bar_rate = data[pos + 35 : pos + 45].int * 32.0
+    bar_rate = (
+        data[pos + 35 : pos + 45].int * 32.0 if status_bar_rate else None
+    )
     status_inert_vv = data[pos + 45]
-    inert_vv = data[pos + 46 : pos + 56].int * 32.0
+    inert_vv = (
+        data[pos + 46 : pos + 56].int * 32.0 if status_inert_vv else None
+    )
     bds_6_0 = {
         "Status Magnetic Heading": bool(status_mag_h),
         "Magnetic Heading (deg) BDS": mag_h,
@@ -398,7 +406,7 @@ def decode_mode_s_mb_data(data, pos):
             continue
         bds_decoder = bds_entry[bda2]
         decoded_bds, _ = bds_decoder(
-            data, block_start + 8
+            data, block_start
         )  # Data starts after 8-bit header per block? Original: data[start + 8 : start + 8 + 56]
         bds.update(decoded_bds)
         start += 64  # 56 + 8
@@ -708,7 +716,16 @@ def decode_cat48(
         r = float(decoded["Range (m)"])
         theta_rad = np.deg2rad(float(decoded["Theta"]))
         H = float(decoded["Altitude (m)"])
-        elevation_rad = np.asin((H - radar_coords.height) / r)
+        h = radar_coords.height
+        Re = 6371000.0
+        
+        # Clamp argument to asin to prevent domain error
+        arg = (2 * Re * (H - h) + H**2 - h**2 - r**2) / (2 * r * (Re + h))
+        if arg > 1.0:
+            arg = 1.0
+        elif arg < -1.0:
+            arg = -1.0
+        elevation_rad = np.asin(arg)
         coords_polar = CoordinatesPolar(r, theta_rad, elevation_rad)
         coords_cart = GeoUtils.change_radar_spherical_2_radar_cartesian(coords_polar)
         if coords_cart:
