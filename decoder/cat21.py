@@ -119,13 +119,20 @@ def decode_target_report_descriptor(data: bitstring.BitArray):
             "Report from field monitor" if rab == 1 else "Report from ADS-B transceiver"
         ),
         "GBS": 0,
+        "Filter": False,
     }
     bits_processed = 8
 
     # Octetos de extensión
     if fx:
-        decoded["GBS"] = data[bits_processed + 2]
-        fx = data[bits_processed + 7]
+        if len(data) >= bits_processed + 8:
+            # Check bit 1 of extension for filter condition (C# line 857)
+            extension_val = data[bits_processed : bits_processed + 8].uint
+            decoded["GBS"] = (extension_val >> 5) & 1  # bit 2 of extension
+            filter_bit = (extension_val >> 6) & 1  # bit 1 of extension
+            decoded["Filter"] = filter_bit == 1
+
+        fx = data[bits_processed + 7] if len(data) > bits_processed + 7 else False
         bits_processed += 8
         # Avanza el puntero por todas las extensiones FX
         while fx:
@@ -169,7 +176,7 @@ def decode_time_of_reception_position(data: bitstring.BitArray):
     s = time_val % 60
     return {
         "Time (s since midnight)": time_val,
-        "UTC Time (HH:MM:SS)": f"{h:02d}:{m:02d}:{s:06.3f}",
+        "Time String": f"{h:02d}:{m:02d}:{s:06.3f}",
     }, 24
 
 
@@ -178,12 +185,32 @@ def decode_mode3a_code(data: bitstring.BitArray):
     if len(data) < 16:
         raise ValueError("Datos insuficientes para Mode 3/A Code.")
     val = data[0:16].uint
-    code = val & 0x0FFF
-    a = (code >> 9) & 0b111
-    b = (code >> 6) & 0b111
-    c = (code >> 3) & 0b111
-    d = code & 0b111
-    return {"Mode-3/A Code": f"{a}{b}{c}{d}"}, 16
+    # Extract exactly like C# implementation
+    # C# uses MSB-first array indexing, so we need to extract bits accordingly
+    # For 16-bit value: C# array[0] = bit15, array[1] = bit14, ..., array[15] = bit0
+    # C# extracts array[i+4], array[i+5], array[i+6] for i=0,3,6,9
+    # This means we extract bits starting from position 4, not 0!
+    digits = []
+    for i in range(0, 12, 3):
+        # C# extracts array[i+4], array[i+5], array[i+6]
+        # This corresponds to our bits: 15-(i+4), 15-(i+5), 15-(i+6)
+        bit0 = (val >> (15 - (i + 4))) & 1
+        bit1 = (val >> (15 - (i + 5))) & 1
+        bit2 = (val >> (15 - (i + 6))) & 1
+        digit = (bit0 << 2) | (bit1 << 1) | bit2
+        digits.append(digit)
+
+    # Combine into 4-digit octal code (A*1000 + B*100 + C*10 + D)
+    mode3a_code = digits[0] * 1000 + digits[1] * 100 + digits[2] * 10 + digits[3]
+    # Format with leading zero if needed (matching C# logic)
+    if mode3a_code < 10:
+        return {"Mode-3/A Code": f"000{mode3a_code}"}, 16
+    elif mode3a_code < 100:
+        return {"Mode-3/A Code": f"00{mode3a_code}"}, 16
+    elif mode3a_code < 1000:
+        return {"Mode-3/A Code": f"0{mode3a_code}"}, 16
+    else:
+        return {"Mode-3/A Code": f"{mode3a_code}"}, 16
 
 
 def decode_flight_level(data: bitstring.BitArray):
@@ -198,8 +225,8 @@ def decode_flight_level(data: bitstring.BitArray):
 
     return {
         "Flight Level (FL)": flight_level_corrected,
-        "Altitude (ft)": flight_level_corrected * 100,
-        "Altitude (m)": flight_level_corrected * 30.48,
+        "Heigth (ft)": flight_level_corrected * 100,
+        "Height (m)": flight_level_corrected * 30.48,
     }, 16
 
 
@@ -317,6 +344,48 @@ def decode_target_identification(data: bitstring.BitArray):
     return {"Target Identification": chars.strip()}, 48
 
 
+def decode_receiver_id(data: bitstring.BitArray):
+    """Decodifica el Receiver ID (FRN 42) con Barometric Pressure Setting."""
+    if len(data) < 16:
+        raise ValueError("Datos insuficientes para Receiver ID.")
+
+    # First octet is REP (should be 0 for single receiver)
+    rep = data[0:8].uint
+    bits_processed = 8
+
+    # Second octet contains the field presence bits
+    if len(data) >= bits_processed + 8:
+        presence_bits = data[bits_processed : bits_processed + 8].uint
+        bits_processed += 8
+
+        decoded = {}
+        # Bit 0: Barometric Pressure Setting (C# RE function line 954)
+        if (presence_bits & 0x80) != 0:  # Check bit 0 (MSB)
+            if len(data) >= bits_processed + 16:
+                pressure_raw = data[bits_processed : bits_processed + 16].uint
+                # Extract bits 4-15 (C# lines 959-964: array2[i+4] for i=0..11)
+                pressure_12bit = (pressure_raw >> 4) & 0xFFF
+                barometric_pressure = pressure_12bit * 0.1 + 800.0
+                decoded["Barometric Pressure Setting"] = float(barometric_pressure)
+                bits_processed += 16
+
+        # Bit 1: Reserved - skip 2 octets
+        if (presence_bits & 0x40) != 0:  # Check bit 1
+            bits_processed += 16
+
+        # Bit 2: Reserved - skip 1 octet
+        if (presence_bits & 0x20) != 0:  # Check bit 2
+            bits_processed += 8
+
+        # Bit 3: Reserved - skip 1 octet
+        if (presence_bits & 0x10) != 0:  # Check bit 3
+            bits_processed += 8
+
+        return decoded, bits_processed
+
+    return {}, bits_processed
+
+
 # --- MAPA UAP COMPLETO ---
 # (Nombre, Especificación de Longitud, Función de Decodificación)
 # Si la función es un 'skip', el valor decodificado será None.
@@ -377,7 +446,7 @@ UAP_MAP = {
     39: ("Mode S MB Data", "1+N*8", skip_repetitive_mode_s_mb),
     40: ("ACAS Resolution Advisory Report", "7", skip_field(7)),
     41: ("Receiver ID", "1", skip_field(1)),
-    42: ("Data Ages", "1+", skip_variable_fx),
+    42: ("Receiver ID", "2+", decode_receiver_id),
     # -- FX Bit --
     # 43-47 No Usados [cite: 2588]
     48: ("Reserved Expansion Field", "1+", skip_variable_fx),
@@ -395,7 +464,7 @@ def decode_cat21(cat, length, data: bitstring.BitArray):
         raise ValueError("La categoría debe ser 21")
 
     pos = 0
-    decoded = {"Category": cat}
+    decoded: dict = {"Category": cat}
 
     # Decodifica el FSPEC (puede tener múltiples octetos)
     fspec_data = []
@@ -405,11 +474,11 @@ def decode_cat21(cat, length, data: bitstring.BitArray):
             # Paquete truncado, no se puede leer el FSPEC
             return [], {}, pos
 
-        fspec_bits = data[pos : pos + 8]
+        fspec_bits: bitstring.BitArray = data[pos : pos + 8]
         # Convert BitArray to list of bools for the first 7 bits
         for i in range(7):
-            fspec_data.append(bool(fspec_bits.get(i)))
-        more_fspec = bool(fspec_bits.get(7))  # Comprueba el bit FX
+            fspec_data.append(bool(fspec_bits[i]))
+        more_fspec = bool(fspec_bits[7])  # Comprueba el bit FX
         pos += 8
 
     # Itera sobre los campos presentes en el mensaje y los decodifica o salta
@@ -446,6 +515,11 @@ def decode_cat21(cat, length, data: bitstring.BitArray):
                 # Si no era una función de salto, guardar el valor
                 decoded.update(decoded_value)
 
+                # Check for filter condition in Target Report Descriptor (FRN 2)
+                if frn == 2 and "Filter" in decoded_value and decoded_value["Filter"]:
+                    # Filter condition detected, stop processing further fields
+                    break
+
             pos += bits_processed
 
         except (ValueError, IndexError) as e:
@@ -460,5 +534,18 @@ def decode_cat21(cat, length, data: bitstring.BitArray):
                 f"[ERROR] Error inesperado en FRN {frn} ('{item_name}'): {e}. Deteniendo este paquete."
             )
             break
+    if "Flight Level (FL)" not in decoded and "GBS" in decoded and decoded["GBS"] == 1:
+        # Si GBS está activo pero no tenemos FL, asignar FL=0
+        decoded["Flight Level (FL)"] = 0
+        decoded["Heigth (ft)"] = 0
+        decoded["Height (m)"] = 0
+
+    if "Flight Level (FL)" in decoded and "Barometric Pressure Setting" in decoded:
+        # Calcular altitudes barométricas si tenemos FL y presión
+        fl = decoded["Flight Level (FL)"]
+        p0 = decoded["Barometric Pressure Setting"]
+        altitude_ft = fl * 100.0 + (1013.25 - p0) * 30.0  # Fórmula simplificada
+        decoded["Altitude (ft)"] = float(altitude_ft)
+        decoded["Altitude (m)"] = float(altitude_ft * 0.3048)
 
     return decoded

@@ -1,0 +1,41 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Window x:Class="PGTA_deco048.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:d="http://schemas.microsoft.com/expression/blend/2008" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:local="clr-namespace:PGTA_deco048" Title="MainWindow" Height="450" Width="800">
+  <Grid>
+    <Label Content="PGTA decoder 048/021 (students) v2" VerticalContentAlignment="Bottom" HorizontalContentAlignment="Right" Height="50" Margin="0,0,10,10" Background="#00000000" FontWeight="Bold" FontSize="10" HorizontalAlignment="Right" Width="200" VerticalAlignment="Bottom" />
+    <Image Source="Resources/eetac.png" Opacity="0.1" Margin="-0.2,0,-0.2,0.2" Stretch="Fill" />
+    <Button Name="button_load" Content="Button" HorizontalAlignment="Center" Height="100" VerticalAlignment="Center" Width="100" Click="Button_Click">
+      <Control.Template>
+        <ControlTemplate TargetType="{x:Type Button}">
+          <Image Source="Resources/upload.png" />
+        </ControlTemplate>
+      </Control.Template>
+    </Button>
+    <Button Name="coral" Visibility="Hidden" Width="77" Content="FILTRAR" Height="20" HorizontalAlignment="Left" Margin="327,10,0,0" VerticalAlignment="Top" Click="coral_Click" />
+    <Button Name="TableToCSV" Content="Export CSV" Visibility="Hidden" Height="20" HorizontalAlignment="Right" VerticalAlignment="Top" Width="100" Margin="0,10,10,0" Click="TableToCSV_Click" />
+    <DataGrid Name="grid48" Visibility="Collapsed" IsReadOnly="True" AlternatingRowBackground="#FFFFEBCD" Margin="10,75,10,10" CanUserReorderColumns="False" AutoGenerateColumns="True" ItemsSource="{Binding Lista}">
+      <FrameworkElement.Resources>
+        <ResourceDictionary>
+          <Style x:Key="{x:Type DataGridCell}" TargetType="{x:Type DataGridCell}">
+            <Setter Property="TextBlock.TextAlignment" Value="Center" />
+          </Style>
+          <Style x:Key="{x:Type DataGridColumnHeader}" TargetType="{x:Type DataGridColumnHeader}">
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+          </Style>
+        </ResourceDictionary>
+      </FrameworkElement.Resources>
+    </DataGrid>
+    <CheckBox Name="fijo_cb" Visibility="Hidden" Content="Eliminar Transponder Fijo" HorizontalAlignment="Left" Margin="10,10,0,0" Height="20" Width="170" VerticalAlignment="Top" />
+    <CheckBox Name="puro_cb" Visibility="Hidden" Content="Eliminar Blanco Puro" HorizontalAlignment="Left" Margin="10,30,0,0" Height="20" Width="170" VerticalAlignment="Top" />
+    <CheckBox Name="ground_cb" Visibility="Hidden" Content="Eliminar vuelos 'On Ground'" HorizontalAlignment="Left" Margin="10,50,0,0" Width="170" Height="20" VerticalAlignment="Top" />
+    <TextBox Name="lat_min" Visibility="Hidden" HorizontalContentAlignment="Center" HorizontalAlignment="Left" Height="20" Margin="190,10,0,0" VerticalAlignment="Top" Width="40" TextWrapping="Wrap" Text="-90" />
+    <Label Name="lat_label" Visibility="Hidden" Content="Lat" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" HorizontalAlignment="Left" Height="26" Margin="230,10,0,0" VerticalAlignment="Top" Width="40" FontWeight="Bold" />
+    <TextBox Name="lat_max" Visibility="Hidden" HorizontalContentAlignment="Center" HorizontalAlignment="Left" Height="20" Margin="270,10,0,0" TextWrapping="Wrap" Text="90" VerticalAlignment="Top" Width="40" />
+    <TextBox Name="lon_min" Visibility="Hidden" HorizontalContentAlignment="Center" HorizontalAlignment="Left" Height="20" Margin="190,40,0,0" TextWrapping="Wrap" Text="-180" VerticalAlignment="Top" Width="40" />
+    <Label Name="lon_label" Visibility="Hidden" Content="Lon" FontWeight="Bold" VerticalContentAlignment="Center" HorizontalContentAlignment="Center" HorizontalAlignment="Left" Height="26" Margin="230,40,0,0" VerticalAlignment="Top" Width="40" />
+    <TextBox Name="lon_max" Visibility="Hidden" HorizontalContentAlignment="Center" HorizontalAlignment="Left" Height="20" Margin="270,40,0,0" TextWrapping="Wrap" Text="180" VerticalAlignment="Top" Width="40" />
+    <CheckBox Name="cb_48" Visibility="Hidden" IsChecked="True" Content="CAT048" HorizontalAlignment="Right" Margin="0,10,120,0" Height="20" Width="128" VerticalAlignment="Top" />
+    <CheckBox Name="cb_21" Visibility="Hidden" IsChecked="True" Content="CAT021" HorizontalAlignment="Right" Margin="0,40,120,0" Width="128" Height="20" VerticalAlignment="Top" />
+    <Button Name="reset_btn" Visibility="Hidden" Content="Reset filtro" HorizontalAlignment="Left" Height="20" Margin="327,40,0,0" VerticalAlignment="Top" Width="77" Click="Button_Click_1" />
+    <TextBox Name="TI_trajectory" Visibility="Hidden" HorizontalAlignment="Left" Height="20" Margin="550,30,0,0" VerticalAlignment="Top" Width="120" Text="" />
+  </Grid>
+</Window>

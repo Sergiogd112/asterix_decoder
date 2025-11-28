@@ -45,3 +45,4 @@ simple_*.py
 
 # Logs
 *.log
+# doc/*

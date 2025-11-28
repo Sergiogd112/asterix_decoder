@@ -59,7 +59,9 @@ def filter_csv():
     )
 
     # Eliminar filas donde la conversión a número falló (si las hubiera)
-    df_filtered = df_filtered.dropna(subset=["Latitude (deg)", "Longitude (deg)"])
+    df_filtered = df_filtered.dropna(
+        subset=["Latitude (deg)", "Longitude (deg)"]
+    )  # type: ignore
 
     # Aplicar el filtro geográfico
     df_filtered = df_filtered[

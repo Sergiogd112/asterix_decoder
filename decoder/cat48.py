@@ -136,21 +136,35 @@ def decode_measure_position_slant_polar(data, pos):
 
 
 def decode_mode3a_octal(data, pos):
-    """Optimized inline version (fixed length, bug fixed for D field)."""
-    # octet1 = data[pos : pos + 8].uint
-    # octet2 = (
-    #     data[pos + 8 : pos + 16].uint if len(data) >= pos + 16 else 0
-    # )  # Assume full
-    # validated = (octet1 >> 7) & 0x1
-    # garbled = (octet1 >> 6) & 0x1
-    # derived = (octet1 >> 5) & 0x1
-    # Assuming spare bit at >>4, then A at bits 3-0 of octet1? Original slicing suggests A at pos+4:7 (bits4-6)
-    # To match original slicing exactly without assuming byte split
-    a = data[pos + 4 : pos + 7].uint
-    b = data[pos + 7 : pos + 10].uint
-    c = data[pos + 10 : pos + 13].uint
-    d = data[pos + 13 : pos + 16].uint  # Fixed from original bug
-    return {"Mode-3/A Code": f"{a}{b}{c}{d}"}, 16
+    """Decodifica el código intermitente Mode 3/A en formato ABCD (siguiendo C#)."""
+    if len(data) < pos + 16:
+        raise ValueError("Datos insuficientes para Mode 3/A Code.")
+    val = data[pos : pos + 16].uint
+    # Extract exactly like C# implementation
+    # C# uses MSB-first array indexing, so we need to extract bits accordingly
+    # For 16-bit value: C# array[0] = bit15, array[1] = bit14, ..., array[15] = bit0
+    # C# extracts array[i+4], array[i+5], array[i+6] for i=0,3,6,9
+    # This means we extract bits starting from position 4, not 0!
+    digits = []
+    for i in range(0, 12, 3):
+        # C# extracts array[i+4], array[i+5], array[i+6]
+        # This corresponds to our bits: 15-(i+4), 15-(i+5), 15-(i+6)
+        bit0 = (val >> (15 - (i + 4))) & 1
+        bit1 = (val >> (15 - (i + 5))) & 1
+        bit2 = (val >> (15 - (i + 6))) & 1
+        digit = (bit0 << 2) | (bit1 << 1) | bit2
+        digits.append(digit)
+    # Combine into 4-digit octal code (A*1000 + B*100 + C*10 + D)
+    mode3a_code = digits[0] * 1000 + digits[1] * 100 + digits[2] * 10 + digits[3]
+    # Format with leading zero if needed (matching C# logic)
+    if mode3a_code < 10:
+        return {"Mode-3/A Code": f"000{mode3a_code}"}, 16
+    elif mode3a_code < 100:
+        return {"Mode-3/A Code": f"00{mode3a_code}"}, 16
+    elif mode3a_code < 1000:
+        return {"Mode-3/A Code": f"0{mode3a_code}"}, 16
+    else:
+        return {"Mode-3/A Code": f"{mode3a_code}"}, 16
 
 
 def decode_fl_binary(data, pos):
@@ -162,8 +176,8 @@ def decode_fl_binary(data, pos):
         # "Validated": bool(validated),
         # "Garbled": bool(garbled),
         "Flight Level (FL)": fl,
-        "Altitude (ft)": fl * 100,
-        "Altitude (m)": fl * 30.48,
+        "Heigth (ft)": fl * 100,
+        "Heigth (m)": fl * 30.48,
     }, 16
 
 
@@ -331,23 +345,15 @@ def decode_BDS_6_0(data, pos):
     if len(data) - pos < 56:
         raise ValueError("Data length must be at least 56 bits for BDS 6,0")
     status_mag_h = data[pos]
-    mag_h = (
-        data[pos + 1 : pos + 12].int * (90.0 / 512.0) if status_mag_h else None
-    )
+    mag_h = data[pos + 1 : pos + 12].int * (90.0 / 512.0) if status_mag_h else None
     status_ias = data[pos + 12]
     ias = data[pos + 13 : pos + 23].uint * 1.0 if status_ias else None
     status_mach = data[pos + 23]
-    mach = (
-        data[pos + 24 : pos + 34].uint * (2.048 / 512) if status_mach else None
-    )
+    mach = data[pos + 24 : pos + 34].uint * (2.048 / 512) if status_mach else None
     status_bar_rate = data[pos + 34]
-    bar_rate = (
-        data[pos + 35 : pos + 45].int * 32.0 if status_bar_rate else None
-    )
+    bar_rate = data[pos + 35 : pos + 45].int * 32.0 if status_bar_rate else None
     status_inert_vv = data[pos + 45]
-    inert_vv = (
-        data[pos + 46 : pos + 56].int * 32.0 if status_inert_vv else None
-    )
+    inert_vv = data[pos + 46 : pos + 56].int * 32.0 if status_inert_vv else None
     bds_6_0 = {
         "Status Magnetic Heading": bool(status_mag_h),
         "Magnetic Heading (deg) BDS": mag_h,
@@ -698,19 +704,27 @@ def decode_cat48(
             decoded.update(result)
         pos += step
     if (
-        radar_coords and "Range (m)" in decoded and "Theta" in decoded
-        # and "Altitude (m)" in decoded
+        "Altitude (m)" not in decoded
+        and "STAT (CAT48)" in decoded
+        and str(decoded.get("STAT (CAT48)", "")).endswith("ground")
     ):
-        if (
-            "Altitude (m)" not in decoded
-            and "STAT (CAT48)" in decoded
-            and str(decoded.get("STAT (CAT48)", "")).endswith("ground")
-        ):
-            decoded["Flight Level (FL)"] = decoded["Altitude (m)"] = decoded[
-                "Altitude (ft)"
-            ] = 0
-        elif "Altitude (m)" not in decoded:
-            return decoded
+        decoded["Flight Level (FL)"] = decoded["Altitude (m)"] = decoded[
+            "Altitude (ft)"
+        ] = 0
+    if ("Flight Level (FL)" in decoded) and ("Barometric Pressure Setting" in decoded):
+        fl = decoded["Flight Level (FL)"]
+        baro_setting = decoded["Barometric Pressure Setting"]
+        if baro_setting and fl is not None:
+            altitude_ft = fl * 100 + (1013.25 - baro_setting) * 30
+            altitude_m = altitude_ft * 0.3048
+            decoded["Altitude (ft)"] = altitude_ft
+            decoded["Altitude (m)"] = altitude_m
+    if (
+        radar_coords
+        and "Range (m)" in decoded
+        and "Theta" in decoded
+        and "Altitude (m)" in decoded
+    ):
 
         # Convert polar to Cartesian coordinates
         r = float(decoded["Range (m)"])
@@ -718,7 +732,7 @@ def decode_cat48(
         H = float(decoded["Altitude (m)"])
         h = radar_coords.height
         Re = 6371000.0
-        
+
         # Clamp argument to asin to prevent domain error
         arg = (2 * Re * (H - h) + H**2 - h**2 - r**2) / (2 * r * (Re + h))
         if arg > 1.0:

@@ -85,6 +85,12 @@ pub struct Cat48 {
     #[serde(rename = "Flight Level (FL)")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub flight_level: Option<f64>,
+    #[serde(rename = "Height (ft)")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub height_ft: Option<f64>,
+    #[serde(rename = "Height (m)")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub height_m: Option<f64>,
     #[serde(rename = "Altitude (ft)")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub altitude_ft: Option<f64>,
@@ -427,11 +433,34 @@ fn decode_slant_polar(data: &BitSlice<u8, Msb0>) -> (f64, f64, f64, usize) {
 }
 
 fn decode_mode3a_octal(data: &BitSlice<u8, Msb0>) -> (String, usize) {
-    let a = data[4..7].load::<u8>();
-    let b = data[7..10].load::<u8>();
-    let c = data[10..13].load::<u8>();
-    let d = data[13..16].load::<u8>();
-    (format!("{}{}{}{}", a, b, c, d), 16)
+    let val = data[0..16].load_be::<u16>();
+    // Extract exactly like C# implementation
+    // C# uses MSB-first array indexing, so we need to extract bits accordingly
+    // For 16-bit value: C# array[0] = bit15, array[1] = bit14, ..., array[15] = bit0
+    let mut digits = [0u8; 4];
+    for (i, digit) in digits.iter_mut().enumerate() {
+        // C# extracts array[i+4], array[i+5], array[i+6]
+        // This corresponds to our bits: 15-(i+4), 15-(i+5), 15-(i+6)
+        let bit0 = ((val >> (15 - (i as u16 * 3 + 4))) & 1) as u8;
+        let bit1 = ((val >> (15 - (i as u16 * 3 + 5))) & 1) as u8;
+        let bit2 = ((val >> (15 - (i as u16 * 3 + 6))) & 1) as u8;
+
+        *digit = (bit0 << 2) | (bit1 << 1) | bit2;
+    }
+    // Combine into 4-digit octal code (A*1000 + B*100 + C*10 + D)
+    let mode3a_code =
+        digits[0] as u32 * 1000 + digits[1] as u32 * 100 + digits[2] as u32 * 10 + digits[3] as u32;
+
+    // Format with leading zero if needed (matching C# logic)
+    if mode3a_code < 10 {
+        (format!("000{}", mode3a_code), 16)
+    } else if mode3a_code < 100 {
+        (format!("00{}", mode3a_code), 16)
+    } else if mode3a_code < 1000 {
+        (format!("0{}", mode3a_code), 16)
+    } else {
+        (format!("{}", mode3a_code), 16)
+    }
 }
 
 fn decode_fl_binary(data: &BitSlice<u8, Msb0>) -> (f64, usize) {
@@ -634,7 +663,7 @@ fn decode_bds_5_0(data: &BitSlice<u8, Msb0>) -> (BDS50, usize) {
         None
     };
     let status_gs = data[23];
-    
+
     let gs = if status_gs {
         Some(data[24..34].load_be::<u16>() as f64 * 2.0)
     } else {
@@ -910,7 +939,11 @@ fn decode_com_acas_cap_fl_st(
 }
 
 /// Decode a CAT48 payload into `Cat48`, optionally enriching with geodesic coords.
-pub fn decode_cat48(category: u8, data: &BitSlice<u8, Msb0>, radar_coords: Option<CoordinatesWGS84>) -> Cat48 {
+pub fn decode_cat48(
+    category: u8,
+    data: &BitSlice<u8, Msb0>,
+    radar_coords: Option<CoordinatesWGS84>,
+) -> Cat48 {
     let mut decoded = Cat48 {
         category,
         ..Default::default()
@@ -1020,8 +1053,8 @@ pub fn decode_cat48(category: u8, data: &BitSlice<u8, Msb0>, radar_coords: Optio
                 // I048/090, Flight Level in Binary Representation
                 let (fl, bits) = decode_fl_binary(&data[pos..]);
                 decoded.flight_level = Some(fl);
-                decoded.altitude_ft = Some(fl * 100.0);
-                decoded.altitude_m = Some(fl * 30.48); // 1 ft = 0.3048 m
+                decoded.height_ft = Some(fl * 100.0);
+                decoded.height_m = Some(fl * 30.48); // 1 ft = 0.3048 m
                 pos += bits;
             }
             6 => {
@@ -1072,10 +1105,10 @@ pub fn decode_cat48(category: u8, data: &BitSlice<u8, Msb0>, radar_coords: Optio
                 pos += bits;
             }
             14 => {
-                pos+=32;
+                pos += 32;
             }
             15 => {
-                while data[pos+7] {
+                while data[pos + 7] {
                     pos += 8; // Not needed as we're at the end of the field
                 }
             }
@@ -1129,17 +1162,45 @@ pub fn decode_cat48(category: u8, data: &BitSlice<u8, Msb0>, radar_coords: Optio
     }
 
     // "on ground" altitude correction logic
-    if decoded.altitude_m.is_none() {
+    if decoded.height_m.is_none() {
         if let Some(stat) = &decoded.stat_cat48 {
             if stat.ends_with("on ground") {
                 decoded.flight_level = Some(0.0);
-                decoded.altitude_ft = Some(0.0);
-                decoded.altitude_m = Some(0.0);
+                decoded.height_ft = Some(0.0);
+                decoded.height_m = Some(0.0);
             }
         }
     }
 
-    if let (Some(rc), Some(r_m), Some(th), Some(h_m)) = (
+    if decoded.flight_level.is_some()
+        && decoded.mode_s_mb_data.is_some()
+        && decoded.mode_s_mb_data.as_ref().unwrap().bds_4_0.is_some()
+        && decoded
+            .mode_s_mb_data
+            .as_ref()
+            .unwrap()
+            .bds_4_0
+            .as_ref()
+            .unwrap()
+            .bar_press
+            .is_some()
+    {
+        let fl = decoded.flight_level.unwrap();
+        let p0 = decoded
+            .mode_s_mb_data
+            .as_ref()
+            .unwrap()
+            .bds_4_0
+            .as_ref()
+            .unwrap()
+            .bar_press
+            .unwrap_or(1013.25);
+        let altitude_ft = fl * 100.0 + (1013.25 - p0) * 30.0; // Simplified formula
+        decoded.altitude_ft = Some(altitude_ft);
+        decoded.altitude_m = Some(altitude_ft * 0.3048);
+    }
+
+    if let (Some(rc), Some(r_m), Some(th), Some(altitude_m)) = (
         radar_coords,
         decoded.range_m,
         decoded.theta,
@@ -1150,7 +1211,7 @@ pub fn decode_cat48(category: u8, data: &BitSlice<u8, Msb0>, radar_coords: Optio
             let theta_rad = th.to_radians();
             let h = rc.height;
             let re = 6371000.0;
-            let arg = (2.0 * re * (h_m - h) + h_m.powi(2) - h.powi(2) - r_m.powi(2))
+            let arg = (2.0 * re * (altitude_m - h) + altitude_m.powi(2) - h.powi(2) - r_m.powi(2))
                 / (2.0 * r_m * (re + h));
             let elevation_rad = arg.clamp(-1.0, 1.0).asin();
 

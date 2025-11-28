@@ -15,11 +15,11 @@ if __name__ == "__main__":
     start = time()
     # Decode with Rust
     decoded_rust = decoderrs.load(
-        "Test_Data/datos_asterix_radar.ast",
+        "Test_Data/datos_asterix_adsb.ast",
         radar_lat=radar_lat,
         radar_lon=radar_lon,
         radar_alt=radar_alt,
-        max_messages=10,
+        max_messages=1000,
     )
     print(
         f"Decoded {len(decoded_rust)} messages with Rust decoder in {time()-start:.2f} seconds"
@@ -38,8 +38,41 @@ if __name__ == "__main__":
         for item in decoded_rust
         if item.get("Time (s since midnight)", None) is not None
     ]
-    df_rust = pd.json_normalize(decoded_rust)
+    df_rust = pd.json_normalize(decoded_rust).sort_values(by="Time (s since midnight)")
     columns_sorted = sorted(df_rust.columns)
+    # first_columns = [
+    #     "Category",
+    #     "SAC",
+    #     "SIC",
+    #     "Time (s since midnight)",
+    #     "Time String",
+    #     "Latitude (deg)",
+    #     "Longitude (deg)",
+    #     "Altitude (m)",
+    #     "Altitude (ft)",
+    #     "Range (m)",
+    #     "Range (NM)",
+    #     "Theta (deg)",
+    #     "Mode-3/A Code",
+    #     "Flight Level (FL)",
+    #     "Aircraft Address",
+    #     "Target Identification",
+    #     "Barometric Pressure Setting",
+    #     "Roll Angle",
+    #     "Track Angle",
+    #     "Ground Speed (kts) BDS",
+    #     "Track Angle Rate",
+    #     "TAS",
+    #     "Magnetic Heading (deg) BDS",
+    #     "IAS (kt)",
+    #     "Mach",
+    #     "Barometric Altitude Rate",
+    #     "Inertial Vertical Velocity",
+    #     "Track Number",
+    #     "Ground Speed (kts)",
+    #     "Magnetic Heading (deg)",
+    #     "STAT",
+    # ]
     first_columns = [
         "Category",
         "SAC",
@@ -48,47 +81,33 @@ if __name__ == "__main__":
         "Time String",
         "Latitude (deg)",
         "Longitude (deg)",
+        "Height (m)",
+        "Height (ft)",
         "Altitude (m)",
         "Altitude (ft)",
-        "Range (m)",
-        "Range (NM)",
-        "Theta (deg)",
         "Mode-3/A Code",
         "Flight Level (FL)",
         "Aircraft Address",
         "Target Identification",
         "Barometric Pressure Setting",
-        "Roll Angle (deg)",
-        "Track Angle",
-        "Ground Speed (kts) BDS",
-        "Track Angle Rate",
-        "TAS",
-        "Magnetic Heading (deg) BDS",
-        "IAS (kt)",
-        "Mach",
-        "Barometric Altitude Rate",
-        "Inertial Vertical Velocity",
-        "Track Number",
-        "Ground Speed (kts)",
-        "Magnetic Heading (deg)",
-        "STAT",
-        "Status Ground Speed",
+        "GBS"
     ]
     existing_cols = [col for col in first_columns if col in df_rust.columns]
     other_cols = sorted([col for col in df_rust.columns if col not in first_columns])
     ordered_cols = existing_cols + other_cols
-    df_rust = df_rust[ordered_cols]
-    df_rust.to_csv("radar_rust.csv", index=False)
+    df_rust = df_rust[ordered_cols].query('40.9 <= `Latitude (deg)` <= 41.7 and 1.5 <= `Longitude (deg)` <= 2.6')
+    print(len(df_rust))
+    df_rust.to_csv("adsb_rust.csv", index=False)
     print(f"Decoding time with Rust: {time()-start:.2f} seconds")
-    print("Saved radar_rust.csv")
+    print("Saved adsb_rust.csv")
     gc.collect()
     # Decode with Python
     start = time()
     decoder = Decoder()
     decoded_python = decoder.load(
-        "Test_Data/datos_asterix_radar.ast",
-        parallel=True,
-        max_messages=10,
+        "Test_Data/datos_asterix_adsb.ast",
+        parallel=False,
+        max_messages=1000,
         radar_coords=coords_radar,
     )
     df_python = pd.DataFrame(decoded_python)
@@ -96,12 +115,14 @@ if __name__ == "__main__":
     print(
         f"Decoded {len(decoded_python)} messages with Python decoder in {time()-start:.2f} seconds"
     )
-    df_python = pd.json_normalize(df_python.to_dict("records"))
-    
+    df_python = pd.json_normalize(df_python.to_dict("records")).sort_values(
+        by="Time (s since midnight)"
+    )
+
     existing_cols = [col for col in first_columns if col in df_python.columns]
     other_cols = sorted([col for col in df_python.columns if col not in first_columns])
     ordered_cols = existing_cols + other_cols
-    df_python = df_python[ordered_cols]
-    df_python.to_csv("radar_python.csv", index=False)
+    df_python = df_python[ordered_cols].query('40.9 <= `Latitude (deg)` <= 41.7 and 1.5 <= `Longitude (deg)` <= 2.6')
+    df_python.to_csv("adsb_python.csv", index=False)
     print(f"Decoding time with Python: {time()-start:.2f} seconds")
-    print("Saved radar_python.csv")
+    print("Saved adsb_python.csv")
