@@ -20,6 +20,7 @@ import dearpygui.dearpygui as dpg
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
+import gc
 
 import decoderrs
 from decoder.decoder import Decoder
@@ -317,7 +318,7 @@ def load_messages(
         .query("40.9 < `Latitude (deg)` < 41.7 and 1.5 < `Longitude (deg)` < 2.6")
         .reset_index(drop=True)
     )
-
+    gc.collect()
     return df
 
 
@@ -808,10 +809,41 @@ class Dashboard:
             if key in self.aircraft_series:
                 dpg.set_value(self.aircraft_series[key], (lon, lat))
                 aircraft_in_frame.add(key)
+            else:
+                # Dynamically create series for new aircraft
+                color = self._get_aircraft_color(key, cat)
+                series = dpg.add_scatter_series(
+                    x=lon,
+                    y=lat,
+                    label=f"{aid}-{cat}",
+                    parent="y_axis",
+                )
+                dpg.bind_item_theme(
+                    series,
+                    self._get_series_theme(dpg.mvScatterSeries, color, cat),
+                )
+                self.aircraft_series[key] = series
+                aircraft_in_frame.add(key)
+
+                # Create trail series for the new aircraft
+                subtler_color = color.copy()
+                subtler_color[3] = 90
+                trail_color = subtler_color.copy()
+                trail_color[3] = 80
+                trail_series = dpg.add_line_series(
+                    x=[], y=[], label="", parent="y_axis"
+                )
+                dpg.bind_item_theme(
+                    trail_series,
+                    self._get_series_theme(dpg.mvLineSeries, trail_color),
+                )
+                self.aircraft_trail_segments[key] = [trail_series]
+
             if key in self.aircraft_trail_segments:
                 self._update_trail_segments(key, trail_dict.get(key))
 
-        for key in self.aircraft_series:
+        # Iterate over a copy of the keys to avoid RuntimeError
+        for key in list(self.aircraft_series):
             if key not in aircraft_in_frame:
                 dpg.set_value(self.aircraft_series[key], ([], []))
             if key in self.aircraft_trail_segments and key not in trail_dict:

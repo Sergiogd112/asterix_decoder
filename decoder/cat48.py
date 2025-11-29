@@ -17,11 +17,11 @@ def decode_dsi(data, pos):
 def decode_time_of_day(data, pos):
     """Optimized inline version for Time of Day (fixed length)."""
     time_of_day = data[pos : pos + 24].uint / 128.0
-    h = time_of_day // 3600
-    m = (time_of_day // 60) % 60
+    h = int(time_of_day // 3600)
+    m = int(time_of_day // 60) % 60
     s = time_of_day % 60
     return {
-        "UTC Time (HH:MM:SS)": f"{h}:{m}:{s}",
+        "Time String": f"{h:02}:{m:02}:{s:06.3f}",
         "Time (s since midnight)": time_of_day,
     }, 24
 
@@ -52,11 +52,12 @@ def decode_target_desc(data, pos):
         "Mode S Roll-Call + PSR",
     ]
     target_desc = {
-        "Target_Type": target_types[target_type_idx],
+        "Target Type": target_types[target_type_idx],
         "Simulated": bool(simulated),
         "RDP": bool(rdp),
         "SPI": bool(spi),
         "RAB": bool(rab),
+        "Is_Pure": target_type_idx < 4,
     }
 
     if not ext1:
@@ -86,10 +87,10 @@ def decode_target_desc(data, pos):
     target_desc.update(
         {
             "Test": bool(test),
-            "Extended_Range": bool(ext_range),
+            "Extended Range": bool(ext_range),
             "XPulse": bool(xpulse),
-            "Military_Emergency": bool(mil_em),
-            "Military_Identification": bool(mil_id),
+            "Military Emergency": bool(mil_em),
+            "Military Identification": bool(mil_id),
             "FOE/FRI": foe_fri_table[foe_fri_idx],
         }
     )
@@ -132,7 +133,11 @@ def decode_measure_position_slant_polar(data, pos):
     """Optimized inline version (fixed length)."""
     range_nm = data[pos : pos + 16].uint / 256.0
     theta = data[pos + 16 : pos + 32].uint * (360.0 / 65536.0)
-    return {"Range (NM)": range_nm, "Range (m)": range_nm * 1852, "Theta": theta}, 32
+    return {
+        "Range (NM)": range_nm,
+        "Range (m)": range_nm * 1852,
+        "Theta (deg)": theta,
+    }, 32
 
 
 def decode_mode3a_octal(data, pos):
@@ -156,15 +161,12 @@ def decode_mode3a_octal(data, pos):
         digits.append(digit)
     # Combine into 4-digit octal code (A*1000 + B*100 + C*10 + D)
     mode3a_code = digits[0] * 1000 + digits[1] * 100 + digits[2] * 10 + digits[3]
-    # Format with leading zero if needed (matching C# logic)
-    if mode3a_code < 10:
-        return {"Mode-3/A Code": f"000{mode3a_code}"}, 16
-    elif mode3a_code < 100:
-        return {"Mode-3/A Code": f"00{mode3a_code}"}, 16
-    elif mode3a_code < 1000:
-        return {"Mode-3/A Code": f"0{mode3a_code}"}, 16
-    else:
-        return {"Mode-3/A Code": f"{mode3a_code}"}, 16
+
+    mode3a_str = f"{mode3a_code:04d}"
+    return {
+        "Mode-3/A Code": mode3a_str,
+        "Is_Static": mode3a_str == "7777",
+    }, 16
 
 
 def decode_fl_binary(data, pos):
@@ -176,8 +178,8 @@ def decode_fl_binary(data, pos):
         # "Validated": bool(validated),
         # "Garbled": bool(garbled),
         "Flight Level (FL)": fl,
-        "Heigth (ft)": fl * 100,
-        "Heigth (m)": fl * 30.48,
+        "Height (ft)": fl * 100,
+        "Height (m)": fl * 30.48,
     }, 16
 
 
@@ -198,19 +200,19 @@ def decode_radar_plot_characteristics(data, pos):
         if remaining < 16:
             raise ValueError("Insufficient bits for SSR plot runlength")
         ssr_run = data[new_pos : new_pos + 8].uint * 360.0 / 8192.0
-        radar_plot_characteristics["SSR plot runlength"] = ssr_run
+        radar_plot_characteristics["SSR Plot Runlength"] = ssr_run
         new_pos += 8
     if (first_oct >> 6) & 0x1:
         if remaining < new_pos - pos + 8:
             raise ValueError("Insufficient bits for Number of received replies SSR")
-        radar_plot_characteristics["Number of received replies SSR"] = data[
+        radar_plot_characteristics["Number of Received Replies SSR"] = data[
             new_pos : new_pos + 8
         ].uint
         new_pos += 8
     if (first_oct >> 5) & 0x1:
         if remaining < new_pos - pos + 8:
             raise ValueError("Insufficient bits for Amplitude of (M)SSR reply")
-        radar_plot_characteristics["Amplitude of (M)SSR reply"] = data[
+        radar_plot_characteristics["Amplitude of (M)SSR Reply"] = data[
             new_pos : new_pos + 8
         ].uint
         new_pos += 8
@@ -250,7 +252,7 @@ def decode_aircraft_address(data, pos):
     """Optimized inline version (fixed length)."""
     address_int = data[pos : pos + 24].uint
     address = f"{address_int:06X}"
-    return {"TA": address}, 24
+    return {"Aircraft Address": address}, 24
 
 
 def decode_aircraft_id(data, pos):
@@ -331,7 +333,7 @@ def decode_BDS_5_0(data, pos):
         "Status Track Angle": bool(status_track),
         "Track Angle": track_angle,
         "Status Ground Speed": bool(status_gs),
-        "Ground Speed (kts)": gs,
+        "Ground Speed (kts) BDS": gs,
         "Status Track Angle Rate": bool(status_ta_rate),
         "Track Angle Rate": ta_rate,
         "Status TAS": bool(status_tas),
@@ -417,10 +419,6 @@ def decode_mode_s_mb_data(data, pos):
         bds.update(decoded_bds)
         start += 64  # 56 + 8
 
-    return bds, required_bits - (
-        start - pos - required_bits
-    )  # Actually, total = 8 + rep*64
-    # Wait, return total consumed: 8 + rep*64
     return bds, 8 + repetition * 64
 
 
@@ -430,7 +428,7 @@ def decode_track_number(data, pos):
         raise ValueError("Data length must be at least 16 bits for Track Number")
     # print(data[pos : pos + 16].bin)
     track_num = data[pos + 4 : pos + 16].uint  # Bits 0-3 unused?
-    return {"TN": track_num}, 16
+    return {"Track Number": track_num}, 16
     # return {"TrN":track_num}, 16
 
 
@@ -580,6 +578,17 @@ def decode_com_acas_cap_fl_st(data, pos):
     hybrid = data[pos + 12]
     ta_ra = data[pos + 13]
     mops_idx = data[pos + 14 : pos + 16].uint
+
+    flight_status_string = [
+        "No alert, no SPI, airborne",
+        "No alert, no SPI, on ground",
+        "Alert, no SPI, airborne",
+        "Alert, no SPI, on ground",
+        "Alert, SPI, airborne or ground",
+        "No alert, SPI, airborne or ground",
+        "Not assigned",
+        "Unknown",
+    ][flight_stat_idx]
     result = {
         "Communications Capability": [
             "No com",
@@ -591,16 +600,8 @@ def decode_com_acas_cap_fl_st(data, pos):
             "Not assigned",
             "Not assigned",
         ][comm_cap_idx],
-        "STAT (CAT48)": [
-            "No alert, no SPI, airborne",
-            "No alert, no SPI, on ground",
-            "Alert, no SPI, airborne",
-            "Alert, no SPI, on ground",
-            "Alert, SPI, airborne or ground",
-            "No alert, SPI, airborne or ground",
-            "Not assigned",
-            "Unknown",
-        ][flight_stat_idx],
+        "STAT": flight_status_string,
+        "GBS": flight_status_string.endswith("on ground"),
         "SI/II": "II" if si_ii else "SI",
         "Mode S Specific Service Capability": bool(mode_s_ssc),
         "Altitude Reporting Capability": bool(alt_rep),
@@ -704,13 +705,15 @@ def decode_cat48(
             decoded.update(result)
         pos += step
     if (
-        "Altitude (m)" not in decoded
-        and "STAT (CAT48)" in decoded
-        and str(decoded.get("STAT (CAT48)", "")).endswith("ground")
+        "Height (m)" not in decoded
+        and "STAT" in decoded
+        and str(decoded.get("STAT", "")).endswith("on ground")
     ):
-        decoded["Flight Level (FL)"] = decoded["Altitude (m)"] = decoded[
-            "Altitude (ft)"
-        ] = 0
+        decoded["Flight Level (FL)"] = 0.0
+        decoded["Height (ft)"] = 0.0
+        decoded["Height (m)"] = 0.0
+    if ("STAT" in decoded) and (str(decoded.get("STAT", "")).endswith("on ground") and "Barometric Pressure Setting" not in decoded):
+        decoded["Barometric Pressure Setting"] = 1014.25
     if ("Flight Level (FL)" in decoded) and ("Barometric Pressure Setting" in decoded):
         fl = decoded["Flight Level (FL)"]
         baro_setting = decoded["Barometric Pressure Setting"]
@@ -722,14 +725,14 @@ def decode_cat48(
     if (
         radar_coords
         and "Range (m)" in decoded
-        and "Theta" in decoded
-        and "Altitude (m)" in decoded
+        and "Theta (deg)" in decoded
+        and "Height (m)" in decoded
     ):
 
         # Convert polar to Cartesian coordinates
         r = float(decoded["Range (m)"])
-        theta_rad = np.deg2rad(float(decoded["Theta"]))
-        H = float(decoded["Altitude (m)"])
+        theta_rad = np.deg2rad(float(decoded["Theta (deg)"]))
+        H = float(decoded["Height (m)"])
         h = radar_coords.height
         Re = 6371000.0
 
@@ -757,5 +760,4 @@ def decode_cat48(
                     decoded["Longitude (deg)"] = float(
                         coords_geodesic.lon * 180.0 / np.pi
                     )
-                    decoded["Altitude (m)"] = float(H)
     return decoded

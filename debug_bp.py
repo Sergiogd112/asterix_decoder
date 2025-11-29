@@ -47,6 +47,9 @@ while pos < len(data) and count < 10:
     if len(fspec_data) >= 42 and fspec_data[41]:  # FRN 42 is at index 41
         print("FRN 42 (Receiver ID) found!")
 
+        # Also check if this message has Target ID matching ground truth
+        has_target_id = len(fspec_data) >= 29 and fspec_data[28]  # FRN 29
+
         # Find the position of FRN 42 data
         # Skip over fields 1-41
         current_pos = bit_pos
@@ -137,6 +140,12 @@ while pos < len(data) and count < 10:
                 print(f"Method 2 (&FFF): {method2} -> BP: {method2 * 0.1 + 800:.1f}")
                 print(f"Method 3 (>>2): {method3} -> BP: {method3 * 0.1 + 800:.1f}")
 
+                # Try different formulas
+                print(f"Method 1 alt: {method1} -> BP: {method1 * 0.1 + 900:.1f}")
+                print(f"Method 2 alt: {method2} -> BP: {method2 * 0.1 + 900:.1f}")
+                print(f"Method 1 alt2: {method1} -> BP: {method1 * 0.1 + 1000:.1f}")
+                print(f"Method 2 alt2: {method2} -> BP: {method2 * 0.1 + 1000:.1f}")
+
                 # Let's also try to simulate the C# approach exactly
                 # C# convert function creates MSB-first array
                 pressure_bits = []
@@ -149,9 +158,16 @@ while pos < len(data) and count < 10:
                 for bit in extracted_bits:
                     extracted_value = (extracted_value << 1) | bit
 
-                print(
-                    f"C# simulation: {extracted_value} -> BP: {extracted_value * 0.1 + 800:.1f}"
-                )
+                bp_value = extracted_value * 0.1 + 800.0
+                print(f"C# simulation: {extracted_value} -> BP: {bp_value:.1f}")
+
+                # Check if this matches expected ground truth
+                if abs(bp_value - 1013.6) < 0.1:
+                    print("*** MATCHES GROUND TRUTH! ***")
+                else:
+                    print(
+                        f"Expected: 1013.6, Got: {bp_value:.1f}, Diff: {bp_value - 1013.6:.1f}"
+                    )
 
     count += 1
     pos += 3 + length

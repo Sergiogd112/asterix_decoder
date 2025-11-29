@@ -39,7 +39,7 @@ pub struct Cat21 {
     #[serde(rename = "Time (s since midnight)")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub time_of_reception_position: Option<f64>,
-    #[serde(rename = "UTC Time (HH:MM:SS)")]
+    #[serde(rename = "Time String")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub utc_time: Option<String>,
     #[serde(rename = "Mode-3/A Code")]
@@ -54,6 +54,12 @@ pub struct Cat21 {
     #[serde(rename = "Altitude (m)")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub altitude_m: Option<f64>,
+    #[serde(rename = "Height (ft)")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub height_ft: Option<f64>,
+    #[serde(rename = "Height (m)")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub height_m: Option<f64>,
     #[serde(rename = "IAS (kt)")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ias: Option<f64>,
@@ -62,27 +68,16 @@ pub struct Cat21 {
     #[serde(rename = "Magnetic Heading (deg)")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub magnetic_heading: Option<f64>,
-    #[serde(rename = "Target Status VFI")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub target_status_vfi: Option<String>,
-    #[serde(rename = "Target Status RAB")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub target_status_rab: Option<String>,
-    #[serde(rename = "Target Status GBS")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub target_status_gbs: Option<String>,
-    #[serde(rename = "Target Status NRM")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub target_status_nrm: Option<String>,
-    #[serde(rename = "Ground Speed (kts)")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub ground_speed_kts: Option<f64>,
-    #[serde(rename = "Track Angle (deg)")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub track_angle: Option<f64>,
+
     #[serde(rename = "Target Identification")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target_identification: Option<String>,
+    #[serde(rename = "Barometric Pressure Setting")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub barometric_pressure_setting: Option<f64>,
+    #[serde(rename = "Is_Static")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_static: Option<bool>,
 }
 
 fn decode_data_source_id(data: &BitSlice<u8, Msb0>) -> (u8, u8, usize) {
@@ -91,7 +86,9 @@ fn decode_data_source_id(data: &BitSlice<u8, Msb0>) -> (u8, u8, usize) {
     (sac, sic, 16)
 }
 
-fn decode_target_report_descriptor(data: &BitSlice<u8, Msb0>) -> (String, String, String, String, Option<u8>, usize) {
+fn decode_target_report_descriptor(
+    data: &BitSlice<u8, Msb0>,
+) -> (String, String, String, String, Option<u8>, usize) {
     let val = data[0..8].load::<u8>();
     let atp = (val >> 5) & 0b111;
     let arc = (val >> 3) & 0b11;
@@ -109,31 +106,49 @@ fn decode_target_report_descriptor(data: &BitSlice<u8, Msb0>) -> (String, String
 
     let atp_description = atp_map.get(atp as usize).unwrap_or(&"Reserved").to_string();
     let arc_description = arc_map.get(arc as usize).unwrap_or(&"Reserved").to_string();
-    let rc_description = if rc == 0 { "Range Check Passed" } else { "Range Check Failed" }.to_string();
-    let rab_description = if rab == 1 { "Report from field monitor" } else { "Report from ADS-B transceiver" }.to_string();
+    let rc_description = if rc == 0 {
+        "Range Check Passed"
+    } else {
+        "Range Check Failed"
+    }
+    .to_string();
+    let rab_description = if rab == 1 {
+        "Report from field monitor"
+    } else {
+        "Report from ADS-B transceiver"
+    }
+    .to_string();
 
     let mut bits_processed = 8;
     let mut gbs_value = None;
 
     // Handle FX extensions
     if fx {
-        // Handle GBS bit in first extension (Python version: decoded["GBS"] = data[bits_processed+2])
         if data.len() >= bits_processed + 8 {
-            // GBS bit is at position bits_processed+2 in the first extension octet
-            gbs_value = Some(data[bits_processed + 2] as u8);
+            // GBS bit is the second bit (index 1) of the first extension octet.
+            gbs_value = Some(data[bits_processed + 1] as u8);
         }
-        
+
         let mut current_fx = fx;
+        let mut fx_pos = bits_processed;
         while current_fx {
-            if data.len() < bits_processed + 8 {
+            if data.len() < fx_pos + 8 {
                 break;
             }
-            current_fx = data[bits_processed + 7];
-            bits_processed += 8;
+            current_fx = data[fx_pos + 7];
+            fx_pos += 8;
         }
+        bits_processed = fx_pos;
     }
 
-    (atp_description, arc_description, rc_description, rab_description, gbs_value, bits_processed)
+    (
+        atp_description,
+        arc_description,
+        rc_description,
+        rab_description,
+        gbs_value,
+        bits_processed,
+    )
 }
 
 fn decode_wgs84_coords_high_res(data: &BitSlice<u8, Msb0>) -> (f64, f64, usize) {
@@ -183,7 +198,7 @@ fn decode_air_speed(data: &BitSlice<u8, Msb0>) -> (Option<f64>, Option<f64>, usi
     match im {
         0 => (Some(air_speed_raw as f64 * 1.0), None, 16), // IAS in knots (LSB = 1 kt)
         1 => (None, Some(air_speed_raw as f64 * 0.001), 16), // Mach (LSB = 0.001 Mach)
-        _ => (None, None, 16), // Invalid
+        _ => (None, None, 16),                             // Invalid
     }
 }
 
@@ -193,54 +208,65 @@ fn decode_magnetic_heading(data: &BitSlice<u8, Msb0>) -> (f64, usize) {
     (heading, 16)
 }
 
-fn decode_target_status(data: &BitSlice<u8, Msb0>) -> (String, String, String, String, usize) {
-    let val = data[0..8].load::<u8>();
-
-    let vfi = (val >> 6) & 0b11;
-    let rab = (val >> 4) & 0b11;
-    let gbs = (val >> 2) & 0b11;
-    let nrm = val & 0b11;
-
-    let vfi_map = ["Valid", "Invalid", "Reserved", "Reserved"];
-    let rab_map = ["Reported by ADS-B", "Reported by RBM", "Reserved", "Reserved"];
-    let gbs_map = ["No ground bit", "Ground bit set", "Reserved", "Reserved"];
-    let nrm_map = ["Normal", "Degraded", "Reserved", "Reserved"];
-
-    let vfi_desc = vfi_map.get(vfi as usize).unwrap_or(&"Unknown").to_string();
-    let rab_desc = rab_map.get(rab as usize).unwrap_or(&"Unknown").to_string();
-    let gbs_desc = gbs_map.get(gbs as usize).unwrap_or(&"Unknown").to_string();
-    let nrm_desc = nrm_map.get(nrm as usize).unwrap_or(&"Unknown").to_string();
-
-    (vfi_desc, rab_desc, gbs_desc, nrm_desc, 8)
-}
-
-fn decode_airborne_ground_vector(data: &BitSlice<u8, Msb0>) -> (f64, f64, usize) {
-    let ground_speed_raw = data[0..16].load_be::<u16>();
-    let track_angle_raw = data[16..32].load_be::<u16>();
-    
-    // LSB = 2^-14 NM/s = 1/256 kt (approx), convert to knots
-    // Python version: ground_speed_raw * (2**-14) * 3600
-    let ground_speed_kts = ground_speed_raw as f64 * (2_f64.powi(-14)) * 3600.0;
-    let track_angle = track_angle_raw as f64 * (360.0 / 65536.0);
-
-    (ground_speed_kts, track_angle, 32)
-}
-
 fn decode_target_identification(data: &BitSlice<u8, Msb0>) -> (String, usize) {
     let mut chars = String::new();
     for i in 0..8 {
         let start_bit = i * 6;
         let end_bit = start_bit + 6;
+        if end_bit > data.len() {
+            break;
+        }
         let char_code = data[start_bit..end_bit].load_be::<u8>();
-        let c = match char_code {
-            1..=26 => (char_code + 64) as char,
-            32 => ' ',
-            48..=57 => char_code as char,
-            _ => ' ',
+        match char_code {
+            1..=26 => chars.push((char_code + 64) as char),
+            32 => chars.push(' '),
+            48..=57 => chars.push(char_code as char),
+            _ => (), // Ignore other character codes
         };
-        chars.push(c);
     }
     (chars.trim().to_string(), 48)
+}
+
+fn decode_receiver_id(data: &BitSlice<u8, Msb0>) -> (Option<f64>, usize) {
+    if data.len() < 16 {
+        return (None, 8); // Not enough data
+    }
+
+    let mut bits_processed = 8; // Skip first octet (REP), assumed to be handled by field length
+
+    if data.len() < bits_processed + 8 {
+        return (None, bits_processed);
+    }
+    let presence_bits = data[bits_processed..bits_processed + 8].load::<u8>();
+    bits_processed += 8;
+
+    let mut barometric_pressure = None;
+
+    // Bit 0: Barometric Pressure Setting
+    if (presence_bits & 0x80) != 0 {
+        if data.len() >= bits_processed + 16 {
+            let pressure_raw = data[bits_processed + 4..bits_processed + 16].load_be::<u16>();
+            let pressure = pressure_raw as f64 * 0.1 + 800.0;
+            barometric_pressure = Some(pressure);
+            bits_processed += 16;
+        } else {
+            bits_processed += 16;
+        }
+    }
+    // Bit 1: Reserved
+    if (presence_bits & 0x40) != 0 {
+        bits_processed += 16;
+    }
+    // Bit 2: Reserved
+    if (presence_bits & 0x20) != 0 {
+        bits_processed += 8;
+    }
+    // Bit 3: Reserved
+    if (presence_bits & 0x10) != 0 {
+        bits_processed += 8;
+    }
+
+    (barometric_pressure, bits_processed)
 }
 
 fn skip_field(_data: &BitSlice<u8, Msb0>, octets: usize) -> usize {
@@ -262,18 +288,56 @@ fn skip_variable_fx(data: &BitSlice<u8, Msb0>) -> usize {
     pos
 }
 
+fn skip_data_ages(data: &BitSlice<u8, Msb0>) -> usize {
+    let mut bits_processed = 0;
+    let mut fspec_octets = Vec::new();
+
+    // 1. Read the variable-length FSPEC for Data Ages
+    loop {
+        if bits_processed + 8 > data.len() {
+            return bits_processed; // Truncated
+        }
+        let octet_slice = &data[bits_processed..bits_processed + 8];
+        fspec_octets.push(octet_slice.to_bitvec());
+        bits_processed += 8;
+        if !octet_slice[7] {
+            // FX bit is 0
+            break;
+        }
+    }
+
+    // 2. Iterate through FSPEC to count present fields
+    for octet in fspec_octets {
+        for i in 0..7 {
+            if octet[i] {
+                bits_processed += 8; // Each present age field is 1 octet
+            }
+        }
+    }
+
+    bits_processed
+}
+
 fn skip_compound_met_info(data: &BitSlice<u8, Msb0>) -> usize {
     if data.len() < 8 {
         return 8;
     }
-    
+
     let fspec = data[0..8].load::<u8>();
     let mut bits_processed = 8;
-    
-    if fspec & 0x80 != 0 { bits_processed += 16; } // Wind Speed
-    if fspec & 0x40 != 0 { bits_processed += 16; } // Wind Direction
-    if fspec & 0x20 != 0 { bits_processed += 16; } // Temperature
-    if fspec & 0x10 != 0 { bits_processed += 8; }  // Turbulence
+
+    if fspec & 0x80 != 0 {
+        bits_processed += 16;
+    } // Wind Speed
+    if fspec & 0x40 != 0 {
+        bits_processed += 16;
+    } // Wind Direction
+    if fspec & 0x20 != 0 {
+        bits_processed += 16;
+    } // Temperature
+    if fspec & 0x10 != 0 {
+        bits_processed += 8;
+    } // Turbulence
 
     bits_processed
 }
@@ -282,18 +346,18 @@ fn skip_compound_trajectory_intent(data: &BitSlice<u8, Msb0>) -> usize {
     if data.len() < 8 {
         return 8;
     }
-    
+
     let rep = data[0..8].load::<u8>();
-    8 + (rep as usize) * 15 * 8 // 1 octeto REP + N * 15 octetos
+    8 + (rep as usize) * 15 * 8 // 1 octet REP + N * 15 octets
 }
 
 fn skip_repetitive_mode_s_mb(data: &BitSlice<u8, Msb0>) -> usize {
     if data.len() < 8 {
         return 8;
     }
-    
+
     let rep = data[0..8].load::<u8>();
-    8 + (rep as usize) * 8 * 8 // 1 octeto REP + N * 8 octetos
+    8 + (rep as usize) * 8 * 8 // 1 octet REP + N * 8 octets
 }
 
 /// Decode a CAT21 payload (excluding CAT/LEN header) into strongly typed fields.
@@ -304,11 +368,11 @@ pub fn decode_cat21(category: u8, data: &BitSlice<u8, Msb0>) -> Cat21 {
     };
 
     let mut pos = 0;
-    
+
     // Decode FSPEC (can have multiple octets)
     let mut fspec_data = Vec::new();
     let mut more_fspec = true;
-    
+
     while more_fspec && pos < data.len() {
         if pos + 8 > data.len() {
             break;
@@ -321,6 +385,8 @@ pub fn decode_cat21(category: u8, data: &BitSlice<u8, Msb0>) -> Cat21 {
         more_fspec = fspec_bits[7];
         pos += 8;
     }
+
+    let mut barometric_pressure_setting: Option<f64> = None;
 
     // Process fields based on FSPEC
     for (frn_idx, &present) in fspec_data.iter().enumerate() {
@@ -344,7 +410,8 @@ pub fn decode_cat21(category: u8, data: &BitSlice<u8, Msb0>) -> Cat21 {
             }
             2 => {
                 // Target Report Descriptor
-                let (atp_desc, arc_desc, rc_desc, rab_desc, gbs_value, bits) = decode_target_report_descriptor(&data[pos..]);
+                let (atp_desc, arc_desc, rc_desc, rab_desc, gbs_value, bits) =
+                    decode_target_report_descriptor(&data[pos..]);
                 decoded.atp_description = Some(atp_desc);
                 decoded.arc_description = Some(arc_desc);
                 decoded.rc_description = Some(rc_desc);
@@ -430,7 +497,8 @@ pub fn decode_cat21(category: u8, data: &BitSlice<u8, Msb0>) -> Cat21 {
             19 => {
                 // Mode 3/A Code
                 let (code, bits) = decode_mode3a_code(&data[pos..]);
-                decoded.mode3a_code = Some(code);
+                decoded.mode3a_code = Some(code.clone());
+                decoded.is_static = Some(code == "7777");
                 pos += bits;
             }
             20 => {
@@ -441,8 +509,8 @@ pub fn decode_cat21(category: u8, data: &BitSlice<u8, Msb0>) -> Cat21 {
                 // Flight Level
                 let (fl, bits) = decode_flight_level(&data[pos..]);
                 decoded.flight_level = Some(fl);
-                decoded.altitude_ft = Some(fl * 100.0);
-                decoded.altitude_m = Some(fl * 30.48);
+                decoded.height_ft = Some(fl * 100.0);
+                decoded.height_m = Some(fl * 30.48);
                 pos += bits;
             }
             22 => {
@@ -452,13 +520,8 @@ pub fn decode_cat21(category: u8, data: &BitSlice<u8, Msb0>) -> Cat21 {
                 pos += bits;
             }
             23 => {
-                // Target Status
-                let (vfi, rab, gbs, nrm, bits) = decode_target_status(&data[pos..]);
-                decoded.target_status_vfi = Some(vfi);
-                decoded.target_status_rab = Some(rab);
-                decoded.target_status_gbs = Some(gbs);
-                decoded.target_status_nrm = Some(nrm);
-                pos += bits;
+                // Target Status - skip
+                pos += skip_field(&data[pos..], 1);
             }
             24 => {
                 // Barometric Vertical Rate - skip
@@ -469,11 +532,8 @@ pub fn decode_cat21(category: u8, data: &BitSlice<u8, Msb0>) -> Cat21 {
                 pos += skip_field(&data[pos..], 2);
             }
             26 => {
-                // Airborne Ground Vector
-                let (ground_speed, track_angle, bits) = decode_airborne_ground_vector(&data[pos..]);
-                decoded.ground_speed_kts = Some(ground_speed);
-                decoded.track_angle = Some(track_angle);
-                pos += bits;
+                // Airborne Ground Vector - skip
+                pos += skip_field(&data[pos..], 4);
             }
             27 => {
                 // Track Angle Rate - skip
@@ -538,26 +598,47 @@ pub fn decode_cat21(category: u8, data: &BitSlice<u8, Msb0>) -> Cat21 {
                 pos += skip_field(&data[pos..], 1);
             }
             42 => {
-                // Data Ages - skip
-                pos += skip_variable_fx(&data[pos..]);
+                // Data Ages
+                pos += skip_data_ages(&data[pos..]);
             }
             43..=47 => {
-                // Not Used
+                // Not Used - skip as variable
                 pos += skip_variable_fx(&data[pos..]);
             }
             48 => {
-                // Reserved Expansion Field - skip
-                pos += skip_variable_fx(&data[pos..]);
+                // Reserved Expansion Field
+                let (pressure, bits) = decode_receiver_id(&data[pos..]);
+                if pressure.is_some() {
+                    barometric_pressure_setting = pressure;
+                    decoded.barometric_pressure_setting = pressure;
+                }
+                pos += bits;
             }
             49 => {
                 // Special Purpose Field - skip
                 pos += skip_variable_fx(&data[pos..]);
             }
             _ => {
-                // Unknown or undefined fields - skip
+                // Unknown or undefined fields - stop decoding this record
                 break;
             }
         }
+    }
+
+    if decoded.flight_level.is_none() {
+        if let Some(gbs) = decoded.gbs {
+            if gbs == 1 {
+                decoded.flight_level = Some(0.0);
+                decoded.altitude_ft = Some(0.0);
+                decoded.altitude_m = Some(0.0);
+            }
+        }
+    }
+
+    if let (Some(fl), Some(p0)) = (decoded.flight_level, barometric_pressure_setting) {
+        let altitude_ft = fl * 100.0 + (1013.25 - p0) * 30.0; // Simplified formula
+        decoded.altitude_ft = Some(altitude_ft);
+        decoded.altitude_m = Some(altitude_ft * 0.3048);
     }
 
     decoded

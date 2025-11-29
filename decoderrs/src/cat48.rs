@@ -156,6 +156,15 @@ pub struct Cat48 {
     #[serde(rename = "Longitude (deg)")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub longitude: Option<f64>,
+    #[serde(rename = "Is_Pure")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_pure: Option<bool>,
+    #[serde(rename = "Is_Static")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_static: Option<bool>,
+    #[serde(rename = "GBS")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gbs: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Default)]
@@ -165,6 +174,7 @@ pub struct TargetDesc {
     pub rdp: bool,
     pub spi: bool,
     pub rab: bool,
+    pub pure: bool,
     pub test: Option<bool>,
     pub extended_range: Option<bool>,
     pub xpulse: Option<bool>,
@@ -379,12 +389,14 @@ fn decode_target_desc(data: &BitSlice<u8, Msb0>) -> (TargetDesc, usize) {
         "Mode S All-Call + PSR",
         "Mode S Roll-Call + PSR",
     ];
+    let pure = target_type_idx < 4;
     let mut target_desc = TargetDesc {
         target_type: target_types[target_type_idx as usize].to_string(),
         simulated,
         rdp,
         spi,
         rab,
+        pure,
         ..Default::default()
     };
 
@@ -786,7 +798,18 @@ fn decode_mode_s_mb_data(data: &BitSlice<u8, Msb0>) -> (ModeSMBData, usize) {
         repetition,
         ..Default::default()
     };
-
+    // print all the bits in to be decoded for debugging
+    // print!("Decoding Mode S MB Data bits : ");
+    // let mut i = 0;
+    // for bit in data[0..required_bits].iter() {
+    //     if i % 8 == 0 {
+    //         print!("|");
+    //     }
+    //     print!("{}", if *bit { 1 } else { 0 });
+    //     i += 1;
+    // }
+    // print!("|");
+    // println!();
     let mut pos = 8;
     for _i in 0..repetition {
         if pos + 64 > data.len() {
@@ -817,7 +840,7 @@ fn decode_mode_s_mb_data(data: &BitSlice<u8, Msb0>) -> (ModeSMBData, usize) {
                 }
             }
             _ => {
-                println!("Unsupported BDS: {}.{}", bda1, bda2);
+                // println!("Unsupported Cat48 BDS: {}.{}, {}", bda1, bda2, i);
                 // Unsupported BDS
             }
         }
@@ -1010,7 +1033,7 @@ pub fn decode_cat48(
                 // I048/140, Time-of-Day, 3 octets
                 let (tod, tstr, bits) = decode_time_of_day(&data[pos..]);
                 decoded.time_of_day = Some(tod);
-                decoded.time_string = Some(tstr);
+                decoded.time_string = Some(tstr.clone());
                 pos += bits;
             }
             2 => {
@@ -1021,6 +1044,7 @@ pub fn decode_cat48(
                 decoded.rdp = Some(td.rdp);
                 decoded.spi = Some(td.spi);
                 decoded.rab = Some(td.rab);
+                decoded.is_pure = Some(td.pure);
                 decoded.test = td.test;
                 decoded.extended_range = td.extended_range;
                 decoded.xpulse = td.xpulse;
@@ -1047,6 +1071,7 @@ pub fn decode_cat48(
                 // I048/070, Mode-3/A Code in Octal Representation
                 let (m3a, bits) = decode_mode3a_octal(&data[pos..]);
                 decoded.mode3a_code = Some(m3a.clone());
+                decoded.is_static=Some(m3a == "7777");
                 pos += bits;
             }
             5 => {
@@ -1141,6 +1166,7 @@ pub fn decode_cat48(
                 ) = decode_com_acas_cap_fl_st(&data[pos..]);
                 decoded.com_acas_cap_fl_st_communications_capability =
                     Some(communications_capability);
+                decoded.gbs=Some(stat.ends_with("on ground"));
                 decoded.stat_cat48 = Some(stat);
                 decoded.com_acas_cap_fl_st_si_ii = Some(si_ii);
                 decoded.com_acas_cap_fl_st_mode_s_specific_service_capability =
@@ -1168,6 +1194,38 @@ pub fn decode_cat48(
                 decoded.flight_level = Some(0.0);
                 decoded.height_ft = Some(0.0);
                 decoded.height_m = Some(0.0);
+            }
+        }
+    }
+    // if the barometric pressure is not available and the aircraft is on ground, set altitude the presure to 1013.4
+    if decoded.mode_s_mb_data.is_none()
+        || decoded.mode_s_mb_data.as_ref().unwrap().bds_4_0.is_none()
+        || decoded
+            .mode_s_mb_data
+            .as_ref()
+            .unwrap()
+            .bds_4_0
+            .as_ref()
+            .unwrap()
+            .bar_press
+            .is_none()
+    {
+        if let Some(stat) = &decoded.stat_cat48 {
+            if stat.ends_with("on ground") {
+                if decoded.mode_s_mb_data.is_none() {
+                    decoded.mode_s_mb_data = Some(ModeSMBData::default());
+                }
+                if decoded.mode_s_mb_data.as_ref().unwrap().bds_4_0.is_none() {
+                    decoded.mode_s_mb_data.as_mut().unwrap().bds_4_0 = Some(BDS40::default());
+                }
+                decoded
+                    .mode_s_mb_data
+                    .as_mut()
+                    .unwrap()
+                    .bds_4_0
+                    .as_mut()
+                    .unwrap()
+                    .bar_press = Some(1014.25);
             }
         }
     }
@@ -1200,18 +1258,18 @@ pub fn decode_cat48(
         decoded.altitude_m = Some(altitude_ft * 0.3048);
     }
 
-    if let (Some(rc), Some(r_m), Some(th), Some(altitude_m)) = (
+    if let (Some(rc), Some(r_m), Some(th), Some(h_m)) = (
         radar_coords,
         decoded.range_m,
         decoded.theta,
-        decoded.altitude_m,
+        decoded.height_m,
     ) {
         // Only proceed if all necessary values are present and range_m > 0
         if r_m > 0.0 {
             let theta_rad = th.to_radians();
             let h = rc.height;
             let re = 6371000.0;
-            let arg = (2.0 * re * (altitude_m - h) + altitude_m.powi(2) - h.powi(2) - r_m.powi(2))
+            let arg = (2.0 * re * (h_m - h) + h_m.powi(2) - h.powi(2) - r_m.powi(2))
                 / (2.0 * r_m * (re + h));
             let elevation_rad = arg.clamp(-1.0, 1.0).asin();
 
