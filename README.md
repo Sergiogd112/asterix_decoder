@@ -79,7 +79,7 @@ See [BUILD_INSTRUCTIONS.md](BUILD_INSTRUCTIONS.md) for detailed build instructio
 ### 2. Navigate the Dashboard
 - Use the **Play/Pause** controls at the top to animate frames; drag the **Frame** slider for random access.
 - Adjust **Speed (fps)** to fast-forward or slow down playback.
-- Hover aircraft markers for rich tooltips with ID, altitude, roll, and CAT-specific status.
+- Hover aircraft markers for rich tooltips.
 - Click an aircraft to pin its details in the `Clicked Aircraft Info` pane.
 
 ![Dashboard with aircraft map and controls](dashboard.png)
@@ -93,7 +93,8 @@ See [BUILD_INSTRUCTIONS.md](BUILD_INSTRUCTIONS.md) for detailed build instructio
 
 ```
 asterix_decoder/
-├── decoder/           # Core ASTERIX decoding logic
+├── decoder/           # Core ASTERIX decoding logic in Python
+├── decoderrs/           # Core ASTERIX decoding logic in Rust
 ├── dashboard.py       # Main DearPyGui dashboard
 ├── mapdata.py        # Map visualization data
 ├── Test_Data/        # Sample ASTERIX data files
