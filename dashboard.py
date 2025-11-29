@@ -32,37 +32,44 @@ ALL_EXPECTED_COLUMNS = [
     "Category",
     "SAC",
     "SIC",
-    "ATP Description",
-    "ARC Description",
-    "RC Description",
-    "RAB Description",
-    "GBS",
+    "Time (s since midnight)",
+    "Time String",
     "Latitude (deg)",
     "Longitude (deg)",
-    "ICAO Address (hex)",
-    "Time (s since midnight)",
-    "UTC Time (HH:MM:SS)",
+    "Height (m)",
+    "Height (ft)",
+    "Altitude (m)",
+    "Altitude (ft)",
+    "Range (m)",
+    "Range (NM)",
+    "Theta (deg)",
     "Mode-3/A Code",
     "Flight Level (FL)",
-    "Altitude (ft)",
-    "Altitude (m)",
+    "Aircraft Address",
     "Target Identification",
+    "Barometric Pressure Setting",
+    "Roll Angle",
+    "Track Angle",
+    "Ground Speed (kts) BDS",
+    "Track Angle Rate",
+    "TAS",
+    "Magnetic Heading (deg) BDS",
     "IAS (kt)",
     "Mach",
-    "Magnetic Heading (deg)",
-    "Target Status VFI",
-    "Target Status RAB",
-    "Target Status GBS",
-    "Target Status NRM",
+    "Barometric Altitude Rate",
+    "Inertial Vertical Velocity",
+    "Track Number",
     "Ground Speed (kts)",
-    "Track Angle (deg)",
-    "Roll Angle",
-    "STAT (CAT48)",
+    "Magnetic Heading (deg)",
+    "STAT",
+    "GBS",
+    "Is_Pure",
+    "Is_Static",
 ]
 
 
 def generate_per_frame_df(df: pd.DataFrame):
-    """Interpolate sparse aircraft telemetry into per-frame samples.
+    """Interpolate sparse aircraft telemetry into per-frame samples using a vectorized approach.
 
     Args:
         df: Raw decoded ASTERIX records containing positional fields.
@@ -73,9 +80,9 @@ def generate_per_frame_df(df: pd.DataFrame):
         and motion attributes. The frame column is used later for
         playback and filtering.
     """
-    before_missing_count = df["Altitude (m)"].isna().sum()
-    before_missing_mask = df["Altitude (m)"].isna()
 
+    # Part 1: Initial time-based interpolation for Altitude (m)
+    # This remains as it was, as it operates on the original time, not frames.
     def _time_weight_interp(g):
         g = g.sort_values("Time (s since midnight)").copy()
         t = g["Time (s since midnight)"].astype(float).to_numpy()
@@ -83,147 +90,124 @@ def generate_per_frame_df(df: pd.DataFrame):
         mask_known = ~np.isnan(h)
         non_na = int(mask_known.sum())
         if non_na == 0:
-            # nothing to do for this aircraft
             return g
         if non_na == 1:
-            # Only a single known value: fill entire group with that value
             single_val = float(h[mask_known][0])
             g["Altitude (m)"] = single_val
             return g
-        # Use numpy.interp which performs linear interpolation in x (time).
         t_known = t[mask_known]
         h_known = h[mask_known]
-        # np.interp will fill values outside known xp with edge values (desired behavior)
         h_interp = np.interp(t, t_known, h_known)
         g["Altitude (m)"] = h_interp
         return g
 
-    # Apply per-aircraft interpolation using time as the independent variable
+    df = df.sort_values("Time (s since midnight)").reset_index(drop=True)
     df = pd.DataFrame(
         df.groupby(["Target Identification", "Category"], group_keys=False).apply(
             _time_weight_interp
         )
     )
 
-    after_missing_count = df["Altitude (m)"].isna().sum()
-    print("Missing Altitude (m) after :", after_missing_count)
+    # Part 2: Vectorized frame-based processing
 
-    # Show a few example rows that were NaN before but are now filled:
-    rows = []
-    for keys, g in tqdm(df.groupby(["Target Identification", "Category"])):
-        if isinstance(keys, tuple) and len(keys) == 2:
-            aid, cat = keys
-        else:
-            continue
-        g = pd.DataFrame(g).sort_values("frame")
-        minf = int(g["frame"].min())
-        maxf = int(g["frame"].max())
-        frames_all = np.arange(minf, maxf + 1, dtype=int)
+    # Define aggregation spec for columns
+    agg_spec = {
+        "Latitude (deg)": "mean",
+        "Longitude (deg)": "mean",
+        "Altitude (m)": "mean",
+        "Height (m)": "first",
+        "Height (ft)": "first",
+        "IAS (kt)": "first",
+        "Magnetic Heading (deg)": "first",
+        "Ground Speed (kts)": "first",
+        "Roll Angle": "first",
+        "GBS": "first",
+        "STAT": "first",
+        "Time String": "first",
+        "Barometric Pressure Setting": "first",
+        "Track Angle": "first",
+        "Ground Speed (kts) BDS": "first",
+        "Track Angle Rate": "first",
+        "TAS": "first",
+        "Magnetic Heading (deg) BDS": "first",
+        "Barometric Altitude Rate": "first",
+        "Inertial Vertical Velocity": "first",
+        "Track Number": "first",
+        "Aircraft Address": "first",
+        "Flight Level (FL)": "first",
+        "Mode-3/A Code": "first",
+        "Is_Pure": "first",
+        "Is_Static": "first",
+        "Mach": "first",
+        "Theta (deg)": "first",
+        "Range (m)": "first",
+        "Range (NM)": "first",
+    }
 
-        # Aggregate existing known values per frame (mean if multiple records per frame)
-        agg = g.groupby("frame").agg(
-            {
-                "Latitude (deg)": "mean",
-                "Longitude (deg)": "mean",
-                "Altitude (m)": "mean",
-                "IAS (kt)": "first",
-                "Magnetic Heading (deg)": "first",
-                "Ground Speed (kts)": "first",
-                "Roll Angle": "first",
-                "Target Status GBS": "first",
-                "STAT (CAT48)": "first",
-            }
-        )
-        # Reindex to include all frames in the span
-        agg = pd.DataFrame(agg).reindex(frames_all)
-        agg["Target Status GBS"] = agg["Target Status GBS"].ffill()
-        agg["STAT (CAT48)"] = agg["STAT (CAT48)"].ffill()
-        agg = agg.reset_index()
-        # Ensure the frame column exists and is integer
-        if "frame" not in agg.columns and "index" in agg.columns:
-            agg = agg.rename(columns={"index": "frame"})
-        agg["frame"] = agg["frame"].astype(int)
+    # Use only columns that exist in the dataframe
+    agg_spec_filtered = {k: v for k, v in agg_spec.items() if k in df.columns}
 
-        # Interpolate each coordinate using the frame integer as x-axis
-        for col in ["Latitude (deg)", "Longitude (deg)", "Altitude (m)", "Roll Angle"]:
-            vals = agg[col].to_numpy(dtype=float)
-            # known points mask
-            known = ~np.isnan(vals)
-            if known.sum() == 0:
-                # leave as NaN
-                interp_vals = np.full_like(vals, np.nan, dtype=float)
-            elif known.sum() == 1:
-                # single known value -> only set at that specific frame, leave others as NaN
-                interp_vals = np.full_like(vals, np.nan, dtype=float)
-                # Find the frame where the single known value exists
-                known_indices = np.where(known)[0]
-                if len(known_indices) > 0:
-                    known_frame_idx = known_indices[0]
-                    # Set the value only at the known frame
-                    interp_vals[known_frame_idx] = float(vals[known][0])
-            else:
-                xp = agg["frame"].to_numpy(dtype=float)[known]
-                fp = vals[known]
-                # np.interp fills values outside xp with the edge values (desired behavior)
-                interp_vals = np.interp(agg["frame"].to_numpy(dtype=float), xp, fp)
-            agg[col] = interp_vals
-
-        # Add identification and time columns. Use frame as Time (s since midnight) per your requirement.
-        agg["Target Identification"] = aid
-        agg["Time (s since midnight)"] = agg["frame"].astype(float)
-        agg["Category"] = cat
-
-        rows.append(
-            agg[
-                [
-                    "Category",
-                    "frame",
-                    "Target Identification",
-                    "Time (s since midnight)",
-                    "Latitude (deg)",
-                    "Longitude (deg)",
-                    "Altitude (m)",
-                    "IAS (kt)",
-                    "Magnetic Heading (deg)",
-                    "Ground Speed (kts)",
-                    "Roll Angle",
-                    "Target Status GBS",
-                    "STAT (CAT48)",
-                ]
-            ]
-        )
-
-    # Concatenate all aircraft frames into a single DataFrame
-    per_frame_df = (
-        pd.concat(rows, ignore_index=True)
-        if rows
-        else pd.DataFrame(
-            {
-                "Category": [],
-                "frame": [],
-                "Target Identification": [],
-                "Time (s since midnight)": [],
-                "Latitude (deg)": [],
-                "Longitude (deg)": [],
-                "Altitude (m)": [],
-                "IAS (kt)": [],
-                "Magnetic Heading (deg)": [],
-                "Ground Speed (kts)": [],
-                "Roll Angle": [],
-                "Target Status GBS": [],
-                "STAT (CAT48)": [],
-            }
-        )
+    # Aggregate to one record per aircraft/frame
+    agg_df = df.groupby(["Target Identification", "Category", "frame"]).agg(
+        agg_spec_filtered
     )
 
+    # Get frame ranges for each aircraft
+    frame_ranges = df.groupby(["Target Identification", "Category"])["frame"].agg(
+        ["min", "max"]
+    )
+
+    if frame_ranges.empty:
+        # Return an empty DataFrame with the expected columns if no data
+        return pd.DataFrame(columns=df.columns.tolist() + ["Ground Status"])
+
+    # Create a complete multi-index for all frames of all aircraft
+    new_index_tuples = []
+    for idx, row in frame_ranges.iterrows():
+        aid, cat = idx
+        for frame in range(int(row["min"]), int(row["max"]) + 1):
+            new_index_tuples.append((aid, cat, frame))
+
+    multi_index = pd.MultiIndex.from_tuples(
+        new_index_tuples, names=["Target Identification", "Category", "frame"]
+    )
+
+    # Reindex to create rows for all frames, making the data dense
+    per_frame_df = agg_df.reindex(multi_index)
+
+    # Group for vectorized operations
+    grouped = per_frame_df.groupby(level=["Target Identification", "Category"])
+
+    # Interpolate coordinate columns
+    interp_cols = ["Latitude (deg)", "Longitude (deg)", "Altitude (m)", "Roll Angle"]
+    interp_cols_present = [c for c in interp_cols if c in per_frame_df.columns]
+
+    if interp_cols_present:
+        per_frame_df[interp_cols_present] = grouped[interp_cols_present].transform(
+            lambda x: x.interpolate(method="linear", limit_direction="both")
+        )
+
+    # Forward-fill and then back-fill other columns
+    ffill_cols = [c for c in per_frame_df.columns if c not in interp_cols_present]
+    if ffill_cols:
+        per_frame_df[ffill_cols] = grouped[ffill_cols].ffill()
+        per_frame_df[ffill_cols] = grouped[ffill_cols].bfill()
+
+    per_frame_df = per_frame_df.reset_index()
+
+    # Add Time column
+    per_frame_df["Time (s since midnight)"] = per_frame_df["frame"].astype(float)
+
+    # Calculate Ground Status
     per_frame_df["Ground Status"] = per_frame_df.apply(
         Dashboard.determine_ground_status, axis=1
     )
 
-    # Sort for convenience
+    # Final sort
     per_frame_df = per_frame_df.sort_values(
         ["frame", "Target Identification", "Category"]
     ).reset_index(drop=True)
+
     return per_frame_df
 
 
@@ -272,38 +256,51 @@ def load_messages(
             mapped_item["Category"] = item.get("Category", "")
             mapped_item["SAC"] = item.get("SAC", 0)
             mapped_item["SIC"] = item.get("SIC", 0)
-            mapped_item["ATP Description"] = ""
-            mapped_item["ARC Description"] = ""
-            mapped_item["RC Description"] = ""
-            mapped_item["RAB Description"] = (
-                "RAB set" if item.get("RAB", False) else "RAB not set"
-            )
-            mapped_item["GBS"] = ""
+            mapped_item["Time (s since midnight)"] = time_value
+            mapped_item["Time String"] = item.get("Time String", "")
             mapped_item["Latitude (deg)"] = item.get("Latitude (deg)", 0)
             mapped_item["Longitude (deg)"] = item.get("Longitude (deg)", 0)
-            mapped_item["ICAO Address (hex)"] = item.get("Aircraft Address", "")
-            mapped_item["Time (s since midnight)"] = time_value
-            mapped_item["UTC Time (HH:MM:SS)"] = item.get("Time String", "")
+            mapped_item["Height (m)"] = item.get("Height (m)", 0)
+            mapped_item["Height (ft)"] = item.get("Height (ft)", 0)
+            mapped_item["Altitude (m)"] = item.get("Altitude (m)", 0)
+            mapped_item["Altitude (ft)"] = item.get("Altitude (ft)", 0)
+            mapped_item["Range (m)"] = item.get("Range (m)", 0)
+            mapped_item["Range (NM)"] = item.get("Range (NM)", 0)
+            mapped_item["Theta (deg)"] = item.get("Theta (deg)", 0)
             mapped_item["Mode-3/A Code"] = item.get("Mode-3/A Code", "")
             mapped_item["Flight Level (FL)"] = item.get("Flight Level (FL)", 0)
-            mapped_item["Altitude (ft)"] = item.get("Altitude (ft)", 0)
-            mapped_item["Altitude (m)"] = item.get("Altitude (m)", 0)
+            mapped_item["Aircraft Address"] = item.get("Aircraft Address", "")
             mapped_item["Target Identification"] = item.get("Target Identification", "")
+            mapped_item["Barometric Pressure Setting"] = item.get(
+                "Barometric Pressure Setting", 0
+            )
+            mapped_item["Roll Angle"] = item.get("Roll Angle", 0)
+            mapped_item["Track Angle"] = item.get("Track Angle", 0)
+            mapped_item["Ground Speed (kts) BDS"] = item.get(
+                "Ground Speed (kts) BDS", 0
+            )
+            mapped_item["Track Angle Rate"] = item.get("Track Angle Rate", 0)
+            mapped_item["TAS"] = item.get("TAS", 0)
+            mapped_item["Magnetic Heading (deg) BDS"] = item.get(
+                "Magnetic Heading (deg) BDS", 0
+            )
             mapped_item["IAS (kt)"] = item.get("IAS (kt)", 0)
             mapped_item["Mach"] = item.get("Mach", 0)
+            mapped_item["Barometric Altitude Rate"] = item.get(
+                "Barometric Altitude Rate", 0
+            )
+            mapped_item["Inertial Vertical Velocity"] = item.get(
+                "Inertial Vertical Velocity", 0
+            )
+            mapped_item["Track Number"] = item.get("Track Number", 0)
+            mapped_item["Ground Speed (kts)"] = item.get("Ground Speed (kts)", 0)
             mapped_item["Magnetic Heading (deg)"] = item.get(
                 "Magnetic Heading (deg)", 0
             )
-            mapped_item["Target Status VFI"] = ""
-            mapped_item["Target Status RAB"] = (
-                "RAB set" if item.get("RAB", False) else "RAB not set"
-            )
-            mapped_item["Target Status GBS"] = ""
-            mapped_item["Target Status NRM"] = ""
-            mapped_item["Ground Speed (kts)"] = item.get("Ground Speed (kts)", 0)
-            mapped_item["Track Angle (deg)"] = item.get("Theta (deg)", 0)
-            mapped_item["Roll Angle"] = item.get("Roll Angle", 0)
-            mapped_item["STAT (CAT48)"] = item.get("STAT", "")
+            mapped_item["STAT"] = item.get("STAT", "")
+            mapped_item["GBS"] = item.get("GBS", False)
+            mapped_item["Is_Pure"] = item.get("Is_Pure", False)
+            mapped_item["Is_Static"] = item.get("Is_Static", False)
 
             decoded.append(mapped_item)
     else:  # Python
@@ -317,7 +314,6 @@ def load_messages(
     df = df.dropna(subset=["Time (s since midnight)"])
     df = (
         df.assign(frame=df["Time (s since midnight)"].astype(int))
-        .sort_values(["Time (s since midnight)"])
         .query("40.9 < `Latitude (deg)` < 41.7 and 1.5 < `Longitude (deg)` < 2.6")
         .reset_index(drop=True)
     )
@@ -442,34 +438,30 @@ class Dashboard:
     @staticmethod
     def determine_ground_status(row):
         """Derive ground/airborne status from CAT48 STAT and CAT21 flags."""
-        if pd.notna(row["STAT (CAT48)"]):
-            stat = row["STAT (CAT48)"]
+        if pd.notna(row["STAT"]):
+            stat = row["STAT"]
             is_ground = "on ground" in stat
             is_airborne = "airborne" in stat
             if is_ground and not is_airborne:
                 return "On Ground"
             if is_airborne and not is_ground:
                 return "Airborne"
-        if pd.notna(row["Target Status GBS"]):
-            if row["Target Status GBS"] == "Ground bit set":
+        if pd.notna(row["GBS"]):
+            # GBS is now boolean. True means on ground.
+            if row["GBS"]:
                 return "On Ground"
-            if row["Target Status GBS"] == "No ground bit":
+            else:  # If GBS is False, it implies airborne based on context
                 return "Airborne"
         return "Unknown"
 
     def __init__(self, df: pd.DataFrame):
         """Prepare filtered/per-frame datasets and GUI caches."""
-        print("DEBUG: Starting Dashboard.__init__")
         self.df: pd.DataFrame = df
-        print("DEBUG: Applying ground status")
         self.df["Ground Status"] = self.df.apply(self.determine_ground_status, axis=1)
-        print("DEBUG: Generating per-frame DataFrame")
         self.per_frame_df: pd.DataFrame = generate_per_frame_df(df)
-        print("DEBUG: Dropping NA values")
         self.per_frame_df = self.per_frame_df.dropna(
             subset=["Latitude (deg)", "Longitude (deg)"]
         )
-        print("DEBUG: NA values dropped")
 
         self.all_aircraft_keys = [  # type: ignore
             tuple(x)
@@ -498,6 +490,11 @@ class Dashboard:
         self.last_update_time = 0
         self.clicked_aircraft_key = None
 
+        self.viewport_width = 0
+        self.viewport_height = 0
+        self.last_resize_time = 0
+        self.resize_debounce_time = 0.2  # 200ms debounce
+
         # Filter values
         self.lat_min_filter = 40.9
         self.lat_max_filter = 41.7
@@ -509,6 +506,10 @@ class Dashboard:
         self.category_filter = "All"
         self.categories = ["All"] + self.per_frame_df["Category"].unique().tolist()
         self.ground_statuses = ["All", "On Ground", "Airborne"]
+        self.pure_filter = "All"
+        self.static_filter = "All"
+        self.pure_statuses = ["All", "Pure", "Not Pure"]
+        self.static_statuses = ["All", "Static", "Not Static"]
 
         self.filtered_per_frame_df: pd.DataFrame = self.per_frame_df.copy()
         self.filtered_df: pd.DataFrame = self.df.copy()
@@ -537,6 +538,13 @@ class Dashboard:
                 filtered_df = filtered_df[
                     filtered_df["Category"].astype(str) == self.category_filter
                 ]
+            if self.pure_filter != "All":
+                is_pure = self.pure_filter == "Pure"
+                filtered_df = filtered_df[filtered_df["Is_Pure"] == is_pure]
+
+            if self.static_filter != "All":
+                is_static = self.static_filter == "Static"
+                filtered_df = filtered_df[filtered_df["Is_Static"] == is_static]
 
         self.filtered_per_frame_df = pd.DataFrame(filtered_df)
 
@@ -566,6 +574,13 @@ class Dashboard:
                 filtered_df = filtered_df[
                     filtered_df["Category"].astype(str) == self.category_filter
                 ]
+            if self.pure_filter != "All":
+                is_pure = self.pure_filter == "Pure"
+                filtered_df = filtered_df[filtered_df["Is_Pure"] == is_pure]
+
+            if self.static_filter != "All":
+                is_static = self.static_filter == "Static"
+                filtered_df = filtered_df[filtered_df["Is_Static"] == is_static]
         self.filtered_df = pd.DataFrame(filtered_df)
 
     def _get_aircraft_color(self, key, cat):
@@ -582,17 +597,12 @@ class Dashboard:
         self.aircraft_color_cache[key] = color
         return color
 
-    def _get_series_theme(self, series_type, color):
+    def _get_series_theme(self, series_type, color, cat=None):
         """Cache and return a DearPyGui theme with the requested color."""
-        key = (series_type, tuple(color))
+        key = (series_type, tuple(color), cat)
         if key not in self.series_theme_cache:
             with dpg.theme() as theme:
                 with dpg.theme_component(series_type):
-                    dpg.add_theme_color(
-                        dpg.mvPlotCol_Line,
-                        color,
-                        category=dpg.mvThemeCat_Plots,
-                    )
                     if series_type == dpg.mvScatterSeries:
                         dpg.add_theme_color(
                             dpg.mvPlotCol_MarkerOutline,
@@ -606,7 +616,30 @@ class Dashboard:
                             filled,
                             category=dpg.mvThemeCat_Plots,
                         )
-                    if series_type == dpg.mvLineSeries:
+                        if cat == 21:
+                            dpg.add_theme_style(
+                                dpg.mvPlotStyleVar_Marker,
+                                dpg.mvPlotMarker_Square,
+                                category=dpg.mvThemeCat_Plots,
+                            )
+                        elif cat == 48:
+                            dpg.add_theme_style(
+                                dpg.mvPlotStyleVar_Marker,
+                                dpg.mvPlotMarker_Circle,
+                                category=dpg.mvThemeCat_Plots,
+                            )
+                        else:
+                            dpg.add_theme_style(
+                                dpg.mvPlotStyleVar_Marker,
+                                dpg.mvPlotMarker_Circle,
+                                category=dpg.mvThemeCat_Plots,
+                            )  # Default to circle
+                    elif series_type == dpg.mvLineSeries:
+                        dpg.add_theme_color(
+                            dpg.mvPlotCol_Line,
+                            color,
+                            category=dpg.mvThemeCat_Plots,
+                        )
                         dpg.add_theme_style(
                             dpg.mvPlotStyleVar_LineWeight,
                             3.5,
@@ -645,6 +678,10 @@ class Dashboard:
             self.ground_status_filter = app_data
         elif filter_tag == "category_filter":
             self.category_filter = app_data
+        elif filter_tag == "pure_filter":
+            self.pure_filter = app_data
+        elif filter_tag == "static_filter":
+            self.static_filter = app_data
 
         self._apply_filters()
         self._update_plot()
@@ -680,10 +717,39 @@ class Dashboard:
                 "Category",
                 "SAC",
                 "SIC",
+                "Time (s since midnight)",
+                "Time String",
                 "Latitude (deg)",
                 "Longitude (deg)",
+                "Height (m)",
+                "Height (ft)",
                 "Altitude (m)",
+                "Altitude (ft)",
+                "Range (m)",
+                "Range (NM)",
+                "Theta (deg)",
+                "Mode-3/A Code",
+                "Flight Level (FL)",
+                "Aircraft Address",
                 "Target Identification",
+                "Barometric Pressure Setting",
+                "Roll Angle",
+                "Track Angle",
+                "Ground Speed (kts) BDS",
+                "Track Angle Rate",
+                "TAS",
+                "Magnetic Heading (deg) BDS",
+                "IAS (kt)",
+                "Mach",
+                "Barometric Altitude Rate",
+                "Inertial Vertical Velocity",
+                "Track Number",
+                "Ground Speed (kts)",
+                "Magnetic Heading (deg)",
+                "STAT",
+                "GBS",
+                "Is_Pure",
+                "Is_Static",
             ]
 
             current_columns = self.filtered_df.columns.tolist()
@@ -849,33 +915,12 @@ class Dashboard:
                     parent="y_axis",
                 )
 
-                # Add legend entries for categories
-                # dpg.add_scatter_series(
-                #     x=[1.55],
-                #     y=[41.35],
-                #     label="CAT21 (●)",
-                #     parent="y_axis",
-                # )
-                # dpg.add_scatter_series(
-                #     x=[1.55],
-                #     y=[41.30],
-                #     label="CAT48 (■)",
-                #     parent="y_axis",
-                # )
-                # dpg.add_scatter_series(
-                #     x=[1.6],
-                #     y=[41.25],
-                #     label="CAT48",
-                #     parent="y_axis",
-                # )
-
                 # Create scatter series for each aircraft with category-specific markers and colors
                 # print(
                 #     f"DEBUG: Creating {len(self.all_aircraft_keys)} aircraft series..."
                 # )
                 for aid, cat in self.all_aircraft_keys:
                     key = (aid, cat)
-                    print(f"DEBUG: Creating series for {aid}-{cat}")
                     color = self._get_aircraft_color(key, cat)
                     subtler_color = color.copy()
                     subtler_color[3] = 90  # Softer alpha for the trails
@@ -888,7 +933,7 @@ class Dashboard:
                     )
                     dpg.bind_item_theme(
                         series,
-                        self._get_series_theme(dpg.mvScatterSeries, color),
+                        self._get_series_theme(dpg.mvScatterSeries, color, cat),
                     )
 
                     self.aircraft_series[key] = series
@@ -911,6 +956,10 @@ class Dashboard:
                 # )
             with dpg.tooltip(parent="y_axis", tag="plot_tooltip"):
                 dpg.add_text("", tag="tooltip_text")
+
+        with dpg.window(label="Legend", width=150, height=80, pos=[950, 620]):
+            dpg.add_text("CAT21 (Squares)")
+            dpg.add_text("CAT48 (Circles)")
 
         with dpg.window(label="Filters", width=250, height=300, pos=[950, 50]):
             dpg.add_text("Filters")
@@ -964,6 +1013,20 @@ class Dashboard:
                 default_value=self.category_filter,
                 callback=self._filter_callback,
             )
+            dpg.add_combo(
+                label="Pure",
+                tag="pure_filter",
+                items=self.pure_statuses,
+                default_value=self.pure_filter,
+                callback=self._filter_callback,
+            )
+            dpg.add_combo(
+                label="Static",
+                tag="static_filter",
+                items=self.static_statuses,
+                default_value=self.static_filter,
+                callback=self._filter_callback,
+            )
             dpg.add_spacer()
             dpg.add_button(label="Export to CSV", callback=self._export_callback)
 
@@ -988,6 +1051,24 @@ class Dashboard:
 
     def update(self):
         """Advance animation, update hover tooltips, and sync click info."""
+        new_width = dpg.get_viewport_width()
+        new_height = dpg.get_viewport_height()
+
+        if self.viewport_width == 0:  # Initialize on first frame
+            self.viewport_width = new_width
+            self.viewport_height = new_height
+
+        if new_width != self.viewport_width or new_height != self.viewport_height:
+            self.last_resize_time = time.time()
+            self.viewport_width = new_width
+            self.viewport_height = new_height
+
+        is_resizing = (time.time() - self.last_resize_time) < self.resize_debounce_time
+
+        if is_resizing:
+            # Skip updates during resize to prevent lag
+            return
+
         # Animation logic
         if self.is_playing:
             time_per_frame = 1.0 / self.playback_speed
@@ -1049,12 +1130,12 @@ class Dashboard:
                 roll_value = closest_aircraft.get("Roll Angle")
                 if roll_value is not None and pd.notna(roll_value):
                     info += f"\nRoll: {roll_value:.2f} deg"
-                status_value = closest_aircraft.get("Target Status GBS")
+                status_value = closest_aircraft.get("GBS")
                 if status_value is not None and pd.notna(status_value):
-                    info += f"\nSTAT: {status_value}"
-                stat48_value = closest_aircraft.get("STAT (CAT48)")
-                if stat48_value is not None and pd.notna(stat48_value):
-                    info += f"\nSTAT (CAT48): {closest_aircraft['STAT (CAT48)']}"
+                    info += f"\nGBS: {status_value}"
+                stat_value = closest_aircraft.get("STAT")
+                if stat_value is not None and pd.notna(stat_value):
+                    info += f"\nSTAT: {stat_value}"
 
                 dpg.set_value("tooltip_text", info)
             else:
@@ -1118,7 +1199,7 @@ class Dashboard:
             else:
                 dpg.set_value("clicked_id", f"ID: {aid} (out of frame)")
                 dpg.set_value("clicked_category", f"Category: {cat} (out of frame)")
-                dpg.set_value("clicked_altitude", "Altitude: N/A")
+                dpg.set_value("clicked_altitude", "Altitude: NA")
                 dpg.set_value("clicked_time", "Time: N/A")
                 dpg.set_value("clicked_ias", "IAS: N/A")
                 dpg.set_value("clicked_gs", "GS: N/A")

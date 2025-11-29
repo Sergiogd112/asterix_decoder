@@ -1,4 +1,5 @@
 import bitstring
+from rich import print
 
 # --- Funciones de decodificación de stub ---
 # Estas funciones se utilizan para OMITIR campos que están presentes
@@ -84,7 +85,6 @@ def skip_repetitive_mode_s_mb(data: bitstring.BitArray):
 
 
 def decode_data_source_id(data: bitstring.BitArray):
-    """Decodifica SAC/SIC del encabezado del mensaje."""
     if len(data) < 16:
         raise ValueError("Datos insuficientes para Data Source ID.")
     sac = data[0:8].uint
@@ -93,7 +93,6 @@ def decode_data_source_id(data: bitstring.BitArray):
 
 
 def decode_target_report_descriptor(data: bitstring.BitArray):
-    """Obtiene ATP/ARC/RC/RAB y bits GBS de la descriptor FRN 2."""
     if len(data) < 8:
         raise ValueError("Datos insuficientes para Target Report Descriptor.")
     val = data[0:8].uint
@@ -119,22 +118,17 @@ def decode_target_report_descriptor(data: bitstring.BitArray):
             "Report from field monitor" if rab == 1 else "Report from ADS-B transceiver"
         ),
         "GBS": 0,
-        "Filter": False,
     }
     bits_processed = 8
 
     # Octetos de extensión
     if fx:
-        if len(data) >= bits_processed + 8:
-            # Check bit 1 of extension for filter condition (C# line 857)
-            extension_val = data[bits_processed : bits_processed + 8].uint
-            decoded["GBS"] = (extension_val >> 5) & 1  # bit 2 of extension
-            filter_bit = (extension_val >> 6) & 1  # bit 1 of extension
-            decoded["Filter"] = filter_bit == 1
-
-        fx = data[bits_processed + 7] if len(data) > bits_processed + 7 else False
-        bits_processed += 8
         # Avanza el puntero por todas las extensiones FX
+        decoded["GBS"] = data[
+            bits_processed + 1
+        ]  # GBS está en el segundo bit del siguiente octeto
+        fx = data[bits_processed + 7]
+        bits_processed += 8
         while fx:
             if len(data) < (bits_processed + 8):
                 raise ValueError(
@@ -147,7 +141,6 @@ def decode_target_report_descriptor(data: bitstring.BitArray):
 
 
 def decode_wgs84_coords_high_res(data: bitstring.BitArray):
-    """Convierte coordenadas WGS-84 de 32 bits en grados lat/lon."""
     if len(data) < 64:
         raise ValueError("Datos insuficientes para coordenadas de alta resolución.")
     lat_raw = data[0:32].int
@@ -159,7 +152,6 @@ def decode_wgs84_coords_high_res(data: bitstring.BitArray):
 
 
 def decode_target_address(data: bitstring.BitArray):
-    """Lee la dirección ICAO de 24 bits y la devuelve en hexadecimal."""
     if len(data) < 24:
         raise ValueError("Datos insuficientes para Target Address.")
     addr = data[0:24].uint
@@ -167,7 +159,6 @@ def decode_target_address(data: bitstring.BitArray):
 
 
 def decode_time_of_reception_position(data: bitstring.BitArray):
-    """Convierte un sello temporal de 24 bits en segundos y string HH:MM:SS."""
     if len(data) < 24:
         raise ValueError("Datos insuficientes para Time of Reception Position.")
     time_val = data[0:24].uint / 128.0
@@ -181,40 +172,22 @@ def decode_time_of_reception_position(data: bitstring.BitArray):
 
 
 def decode_mode3a_code(data: bitstring.BitArray):
-    """Decodifica el código intermitente Mode 3/A en formato ABCD."""
     if len(data) < 16:
         raise ValueError("Datos insuficientes para Mode 3/A Code.")
     val = data[0:16].uint
-    # Extract exactly like C# implementation
-    # C# uses MSB-first array indexing, so we need to extract bits accordingly
-    # For 16-bit value: C# array[0] = bit15, array[1] = bit14, ..., array[15] = bit0
-    # C# extracts array[i+4], array[i+5], array[i+6] for i=0,3,6,9
-    # This means we extract bits starting from position 4, not 0!
-    digits = []
-    for i in range(0, 12, 3):
-        # C# extracts array[i+4], array[i+5], array[i+6]
-        # This corresponds to our bits: 15-(i+4), 15-(i+5), 15-(i+6)
-        bit0 = (val >> (15 - (i + 4))) & 1
-        bit1 = (val >> (15 - (i + 5))) & 1
-        bit2 = (val >> (15 - (i + 6))) & 1
-        digit = (bit0 << 2) | (bit1 << 1) | bit2
-        digits.append(digit)
-
-    # Combine into 4-digit octal code (A*1000 + B*100 + C*10 + D)
-    mode3a_code = digits[0] * 1000 + digits[1] * 100 + digits[2] * 10 + digits[3]
-    # Format with leading zero if needed (matching C# logic)
-    if mode3a_code < 10:
-        return {"Mode-3/A Code": f"000{mode3a_code}"}, 16
-    elif mode3a_code < 100:
-        return {"Mode-3/A Code": f"00{mode3a_code}"}, 16
-    elif mode3a_code < 1000:
-        return {"Mode-3/A Code": f"0{mode3a_code}"}, 16
-    else:
-        return {"Mode-3/A Code": f"{mode3a_code}"}, 16
+    code = val & 0x0FFF
+    a = (code >> 9) & 0b111
+    b = (code >> 6) & 0b111
+    c = (code >> 3) & 0b111
+    d = code & 0b111
+    mode3a_str = f"{a}{b}{c}{d}"
+    return {
+        "Mode-3/A Code": mode3a_str,
+        "Is_Static": mode3a_str == "7777",
+    }, 16
 
 
 def decode_flight_level(data: bitstring.BitArray):
-    """Calcula Flight Level y altitudes barométricas derivadas."""
     if len(data) < 16:
         raise ValueError("Datos insuficientes para Flight Level.")
     fl_raw = data[0:16].int
@@ -225,111 +198,12 @@ def decode_flight_level(data: bitstring.BitArray):
 
     return {
         "Flight Level (FL)": flight_level_corrected,
-        "Heigth (ft)": flight_level_corrected * 100,
+        "Height (ft)": flight_level_corrected * 100,
         "Height (m)": flight_level_corrected * 30.48,
     }, 16
 
 
-def decode_air_speed(data: bitstring.BitArray):
-    """Interpreta IAS/Mach y devuelve la unidad adecuada."""
-    if len(data) < 16:
-        raise ValueError("Datos insuficientes para Air Speed.")
-
-    # bits 0-1: IM (IAS/Mach)
-    im = data[0:2].uint
-
-    # bits 2-15: Air Speed
-    air_speed_raw = data[2:16].uint
-
-    decoded = {}
-    if im == 0:  # IAS
-        # LSB = 1 kt
-        decoded["IAS (kt)"] = air_speed_raw * 1
-    elif im == 1:  # Mach
-        # LSB = 0.001 Mach
-        decoded["Mach"] = air_speed_raw * 0.001
-    # If im is 2 or 3, it's not valid according to CAT21, so we don't decode.
-
-    return decoded, 16
-
-
-def decode_magnetic_heading(data: bitstring.BitArray):
-    """Convierte el heading magnético codificado en grados."""
-    if len(data) < 16:
-        raise ValueError("Datos insuficientes para Magnetic Heading.")
-
-    # LSB = 360 / 2^16 deg
-    heading_raw = data[0:16].uint
-    heading = heading_raw * (360 / 2**16)
-
-    return {"Magnetic Heading (deg)": heading}, 16
-
-
-def decode_target_status(data: bitstring.BitArray):
-    """Mapea los bits de estado (VFI/RAB/GBS/NRM) a cadenas legibles."""
-    if len(data) < 8:
-        raise ValueError("Datos insuficientes para Target Status.")
-
-    val = data[0:8].uint
-
-    # bits 0-1: VFI (Valid/Invalid)
-    vfi = (val >> 6) & 0b11
-    vfi_map = {0: "Valid", 1: "Invalid", 2: "Reserved", 3: "Reserved"}
-
-    # bits 2-3: RAB (Reported by ADS-B or RBM)
-    rab = (val >> 4) & 0b11
-    rab_map = {
-        0: "Reported by ADS-B",
-        1: "Reported by RBM",
-        2: "Reserved",
-        3: "Reserved",
-    }
-
-    # bits 4-5: GBS (Ground Bit Status)
-    gbs = (val >> 2) & 0b11
-    gbs_map = {0: "No ground bit", 1: "Ground bit set", 2: "Reserved", 3: "Reserved"}
-
-    # bits 6-7: NRM (Navigation Integrity)
-    nrm = val & 0b11
-    nrm_map = {0: "Normal", 1: "Degraded", 2: "Reserved", 3: "Reserved"}
-
-    decoded = {
-        "Target Status VFI": vfi_map.get(vfi, "Unknown"),
-        "Target Status RAB": rab_map.get(rab, "Unknown"),
-        "Target Status GBS": gbs_map.get(gbs, "Unknown"),
-        "Target Status NRM": nrm_map.get(nrm, "Unknown"),
-    }
-
-    return decoded, 8
-
-
-def decode_airborne_ground_vector(data: bitstring.BitArray):
-    """Obtiene velocidad/rumbo en tierra desde FRN 26."""
-    if len(data) < 32:
-        raise ValueError("Datos insuficientes para Airborne Ground Vector.")
-
-    # bits 0-15: Ground Speed
-    ground_speed_raw = data[0:16].uint
-    # LSB = 2^-14 NM/s = 1/256 kt (approx)
-    # 1 NM/s = 3600 NM/h = 3600 kt
-    # So, LSB = (2^-14) * 3600 kt = 0.2197 kt
-    # A more common LSB for ground speed is 1/256 NM/s, which is 1/256 * 1852 m/s = 7.23 m/s
-    # Let's assume LSB = 1/256 NM/s, and convert to knots
-    ground_speed_kts = ground_speed_raw * (2**-14) * 3600  # Convert NM/s to knots
-
-    # bits 16-31: Track Angle
-    track_angle_raw = data[16:32].uint
-    # LSB = 360 / 2^16 deg
-    track_angle = track_angle_raw * (360 / 2**16)
-
-    return {
-        "Ground Speed (kts)": ground_speed_kts,
-        "Track Angle (deg)": track_angle,
-    }, 32
-
-
 def decode_target_identification(data: bitstring.BitArray):
-    """Convierte el identificador de objetivo codificado en caracteres."""
     if len(data) < 48:
         raise ValueError("Datos insuficientes para Target Identification.")
     chars = ""
@@ -344,15 +218,50 @@ def decode_target_identification(data: bitstring.BitArray):
     return {"Target Identification": chars.strip()}, 48
 
 
+def ages(data: bitstring.BitArray):
+    """Decodifica el campo Data Ages (FRN 42, I021/090)."""
+    bits_processed = 0
+    fspec_octets = []
+
+    # 1. Leer el FSPEC de longitud variable para Data Ages
+    while True:
+        if bits_processed + 8 > len(data):
+            raise ValueError("Datos insuficientes para FSPEC de Data Ages.")
+        octet = data[bits_processed : bits_processed + 8]
+        fspec_octets.append(octet)
+        bits_processed += 8
+        if not octet[7]:  # Comprobar el bit FX
+            break
+
+    age_frn_counter = 1  # FRNs empiezan en 1
+
+    # 2. Iterar a través de los octetos del FSPEC
+    for octet in fspec_octets:
+        # 3. Iterar a través de los 7 bits de presencia de cada octeto
+        for i in range(7):
+            bit_is_present = octet[i]
+
+            # El FRN al que corresponde este bit
+            frn_of_aged_data = age_frn_counter
+
+            if bit_is_present:
+                bits_processed += 8
+
+                # Almacenar la edad con una clave descriptiva
+
+            age_frn_counter += 1
+
+    return None, bits_processed
+
+
 def decode_receiver_id(data: bitstring.BitArray):
     """Decodifica el Receiver ID (FRN 42) con Barometric Pressure Setting."""
     if len(data) < 16:
         raise ValueError("Datos insuficientes para Receiver ID.")
 
     # First octet is REP (should be 0 for single receiver)
-    rep = data[0:8].uint
+    rep = data[8:16].uint
     bits_processed = 8
-
     # Second octet contains the field presence bits
     if len(data) >= bits_processed + 8:
         presence_bits = data[bits_processed : bits_processed + 8].uint
@@ -362,13 +271,12 @@ def decode_receiver_id(data: bitstring.BitArray):
         # Bit 0: Barometric Pressure Setting (C# RE function line 954)
         if (presence_bits & 0x80) != 0:  # Check bit 0 (MSB)
             if len(data) >= bits_processed + 16:
-                pressure_raw = data[bits_processed : bits_processed + 16].uint
+                pressure_raw = data[bits_processed + 4 : bits_processed + 16].uint
                 # Extract bits 4-15 (C# lines 959-964: array2[i+4] for i=0..11)
-                pressure_12bit = (pressure_raw >> 4) & 0xFFF
-                barometric_pressure = pressure_12bit * 0.1 + 800.0
+
+                barometric_pressure = pressure_raw * 0.1 + 800.0
                 decoded["Barometric Pressure Setting"] = float(barometric_pressure)
                 bits_processed += 16
-
         # Bit 1: Reserved - skip 2 octets
         if (presence_bits & 0x40) != 0:  # Check bit 1
             bits_processed += 16
@@ -405,7 +313,7 @@ UAP_MAP = {
     ),
     # -- FX Bit --
     8: ("Time of Applicability for Velocity", "3", skip_field(3)),
-    9: ("Air Speed", "2", decode_air_speed),
+    9: ("Air Speed", "2", skip_field(2)),
     10: ("True Air Speed", "2", skip_field(2)),
     11: ("Target Address", "3", decode_target_address),
     12: (
@@ -424,11 +332,11 @@ UAP_MAP = {
     20: ("Roll Angle", "2", skip_field(2)),
     21: ("Flight Level", "2", decode_flight_level),
     # -- FX Bit --
-    22: ("Magnetic Heading", "2", decode_magnetic_heading),
-    23: ("Target Status", "1", decode_target_status),
+    22: ("Magnetic Heading", "2", skip_field(2)),
+    23: ("Target Status", "1", skip_field(1)),
     24: ("Barometric Vertical Rate", "2", skip_field(2)),
     25: ("Geometric Vertical Rate", "2", skip_field(2)),
-    26: ("Airborne Ground Vector", "4", decode_airborne_ground_vector),
+    26: ("Airborne Ground Vector", "4", skip_field(4)),
     27: ("Track Angle Rate", "2", skip_field(2)),
     28: ("Time of Report Transmission", "3", skip_field(3)),
     # -- FX Bit --
@@ -446,10 +354,10 @@ UAP_MAP = {
     39: ("Mode S MB Data", "1+N*8", skip_repetitive_mode_s_mb),
     40: ("ACAS Resolution Advisory Report", "7", skip_field(7)),
     41: ("Receiver ID", "1", skip_field(1)),
-    42: ("Receiver ID", "2+", decode_receiver_id),
+    42: ("Data Ages", "1+", ages),
     # -- FX Bit --
     # 43-47 No Usados [cite: 2588]
-    48: ("Reserved Expansion Field", "1+", skip_variable_fx),
+    48: ("Reserved Expansion Field", "1+", decode_receiver_id),
     49: ("Special Purpose Field", "1+", skip_variable_fx),
     # 50-56 No Definidos en UAP v2.1
 }
@@ -460,11 +368,12 @@ def decode_cat21(cat, length, data: bitstring.BitArray):
     Decodifica un mensaje ASTERIX CAT21 basado en la especificación Eurocontrol v2.1.
     Esta versión está CORREGIDA para saltar correctamente los campos no decodificados.
     """
+
     if cat != 21:
         raise ValueError("La categoría debe ser 21")
 
     pos = 0
-    decoded: dict = {"Category": cat}
+    decoded = {"Category": cat}
 
     # Decodifica el FSPEC (puede tener múltiples octetos)
     fspec_data = []
@@ -474,16 +383,14 @@ def decode_cat21(cat, length, data: bitstring.BitArray):
             # Paquete truncado, no se puede leer el FSPEC
             return [], {}, pos
 
-        fspec_bits: bitstring.BitArray = data[pos : pos + 8]
-        # Convert BitArray to list of bools for the first 7 bits
-        for i in range(7):
-            fspec_data.append(bool(fspec_bits[i]))
-        more_fspec = bool(fspec_bits[7])  # Comprueba el bit FX
+        fspec_bits = data[pos : pos + 8]
+        fspec_data.extend(fspec_bits[:7])  # Añade 7 bits de FRN
+        more_fspec = fspec_bits[7]  # Comprueba el bit FX
         pos += 8
-
     # Itera sobre los campos presentes en el mensaje y los decodifica o salta
     for frn, present in enumerate(fspec_data, start=1):
         if not present:
+
             continue  # El campo no está en este registro, saltar.
 
         if pos >= len(data):
@@ -515,11 +422,6 @@ def decode_cat21(cat, length, data: bitstring.BitArray):
                 # Si no era una función de salto, guardar el valor
                 decoded.update(decoded_value)
 
-                # Check for filter condition in Target Report Descriptor (FRN 2)
-                if frn == 2 and "Filter" in decoded_value and decoded_value["Filter"]:
-                    # Filter condition detected, stop processing further fields
-                    break
-
             pos += bits_processed
 
         except (ValueError, IndexError) as e:
@@ -537,7 +439,7 @@ def decode_cat21(cat, length, data: bitstring.BitArray):
     if "Flight Level (FL)" not in decoded and "GBS" in decoded and decoded["GBS"] == 1:
         # Si GBS está activo pero no tenemos FL, asignar FL=0
         decoded["Flight Level (FL)"] = 0
-        decoded["Heigth (ft)"] = 0
+        decoded["Height (ft)"] = 0
         decoded["Height (m)"] = 0
 
     if "Flight Level (FL)" in decoded and "Barometric Pressure Setting" in decoded:
